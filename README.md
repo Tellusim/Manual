@@ -1,1 +1,1 @@
-# Manual
+# Tellusim Core SDK Manual
