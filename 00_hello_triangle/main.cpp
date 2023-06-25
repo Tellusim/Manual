@@ -42,15 +42,15 @@ int32_t main(int32_t argc, char **argv) {
 		if(key == Window::KeyEsc) window.stop();
 	});
 	
-	// create device
-	Device device(window);
-	if(!device) return 1;
-	
 	// vertex layout
 	struct Vertex {
 		Vector2f position;
 		Color color;
 	};
+	
+	// create device
+	Device device(window);
+	if(!device) return 1;
 	
 	// create pipeline
 	Pipeline pipeline = device.createPipeline();
@@ -132,3 +132,14 @@ int32_t main(int32_t argc, char **argv) {
 	
 	return 0;
 }
+
+/*
+ */
+#if _WINAPP
+	#include <system/TellusimWinApp.h>
+	TS_DECLARE_WINAPP_MAIN
+#endif
+#if _ANDROID
+	#include <system/TellusimAndroid.h>
+	TS_DECLARE_ANDROID_NATIVE_ACTIVITY
+#endif
