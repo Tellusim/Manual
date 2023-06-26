@@ -80,6 +80,7 @@ struct EmitterParameters {
  */
 struct EmitterState {
 	Vector4f position;
+	Vector4f velocity;
 	Vector2i seed;
 	float32_t spawn;
 	uint32_t padding;

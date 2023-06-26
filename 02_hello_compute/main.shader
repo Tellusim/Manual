@@ -67,6 +67,7 @@
 		// initialize emitters
 		[[branch]] if(global_id < compute.max_emitters * GROUP_SIZE) {
 			emitters_buffer[global_id].position = vec4(0.0f);
+			emitters_buffer[global_id].velocity = vec4(0.0f);
 			emitters_buffer[global_id].seed = ivec2(global_id);
 			emitters_buffer[global_id].spawn = 0.0f;
 		}
@@ -106,9 +107,11 @@
 	/*
 	 */
 	shared EmitterParameters emitter;
+	shared vec3 emitter_old_position;
+	shared vec3 emitter_old_velocity;
+	shared vec3 emitter_velocity;
 	shared uint num_particles;
 	shared uint new_index;
-	shared vec4 velocity;
 	
 	/*
 	 */
@@ -152,9 +155,12 @@
 				}
 			}
 			
-			// emitter velocity
-			velocity = (emitter.position - emitters_buffer[global_id].position) / compute.ifps;
-			emitters_buffer[global_id].position = emitter.position;
+			// emitter position and velocity
+			emitter_old_position = emitters_buffer[global_id].position.xyz;
+			emitter_old_velocity = emitters_buffer[global_id].velocity.xyz;
+			emitter_velocity = (emitter.position.xyz - emitter_old_position) / compute.ifps;
+			emitters_buffer[global_id].position.xyz = emitter.position.xyz;
+			emitters_buffer[global_id].velocity.xyz = emitter_velocity;
 		}
 		memoryBarrierShared(); barrier();
 		
@@ -163,19 +169,22 @@
 		[[loop]] for(uint i = 0u; i < num_iterations; i++) {
 			
 			// iteration index
-			uint index = GROUP_SIZE * i + local_id;
+			uint j = GROUP_SIZE * i + local_id;
 			
 			// create particle
-			[[branch]] if(index < num_particles) {
+			[[branch]] if(j < num_particles) {
 				
 				// new particle index
-				index = allocator_buffer[compute.max_particles - new_index + index];
+				uint index = allocator_buffer[compute.max_particles - new_index + j];
 				
 				// particle position
-				particles_buffer[index].position.xyz = emitter.position.xyz + get_random_sphere(global_id, emitter.position_mean, emitter.position_spread * get_random(global_id));
+				float k = float(j) / float(num_particles);
+				vec3 position = mix(emitter_old_position, emitter.position.xyz, k);
+				particles_buffer[index].position.xyz = position + get_random_sphere(global_id, emitter.position_mean, emitter.position_spread * get_random(global_id));
 				
 				// particle velocity
-				particles_buffer[index].velocity.xyz = emitter.direction.xyz * emitter.velocity_mean + get_random_sphere(global_id, emitter.velocity_spread, 0.0f) + velocity.xyz;
+				vec3 velocity = mix(emitter_old_velocity, emitter_velocity, k);
+				particles_buffer[index].velocity.xyz = velocity + emitter.direction.xyz * emitter.velocity_mean + get_random_sphere(global_id, emitter.velocity_spread, 0.0f);
 				particles_buffer[index].velocity_damping = emitter.velocity_damping;
 				
 				// particle color
