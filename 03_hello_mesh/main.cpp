@@ -311,7 +311,7 @@ int32_t main(int32_t argc, char **argv) {
 				// draw instances
 				command.drawMesh(grid_size, grid_size, grid_height);
 				
-			// begin query
+			// end query
 			if(time_query) command.endQuery(time_query);
 			
 			// draw panel
