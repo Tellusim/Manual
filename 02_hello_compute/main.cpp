@@ -320,8 +320,8 @@ int32_t main(int32_t argc, char **argv) {
 			compute.dispatchIndirect();
 		}
 		
-		// flush vertex buffer
-		device.flushBuffer(vertex_buffer);
+		// flush render buffers
+		device.flushBuffers({ vertex_buffer, draw_buffer });
 		
 		// window target
 		target.begin();
