@@ -32,7 +32,9 @@
 #include <graphics/TellusimMeshModel.h>
 #include <platform/TellusimWindow.h>
 #include <platform/TellusimDevice.h>
+#include <platform/TellusimKernel.h>
 #include <platform/TellusimPipeline.h>
+#include <platform/TellusimCompute.h>
 #include <platform/TellusimCommand.h>
 
 #include "panel.h"
@@ -52,7 +54,7 @@ int32_t main(int32_t argc, char **argv) {
 	// create window
 	Window window(app.getPlatform(), app.getDevice());
 	if(!window || !window.setSize(app.getWidth(), app.getHeight())) return 1;
-	if(!window.create("03 Hello Mesh") || !window.setHidden(false)) return 1;
+	if(!window.create("03 Hello Raster") || !window.setHidden(false)) return 1;
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
@@ -65,8 +67,8 @@ int32_t main(int32_t argc, char **argv) {
 	constexpr uint32_t grid_height = 2;
 	
 	// mesh parameters
-	constexpr uint32_t task_group_size = 32;
-	constexpr uint32_t mesh_group_size = 32;
+	constexpr uint32_t draw_group_size = 32;
+	constexpr uint32_t raster_group_size = 128;
 	constexpr uint32_t max_geometries = 2048;
 	constexpr uint32_t max_attributes = 128;
 	constexpr uint32_t max_primitives = 128;
@@ -78,36 +80,58 @@ int32_t main(int32_t argc, char **argv) {
 		Vector4f planes[4];				// clipping planes
 		Vector4f signs[4];				// clipping signs
 		Vector4f camera;				// camera position
-		uint32_t grid_size;				// grid size
+		uint32_t surface_stride;		// surface stride
 		float32_t projection_scale;		// projection scale
 		float32_t window_width;			// window width
 		float32_t window_height;		// window height
 		float32_t time;
 	};
 	
+	struct ClearParameters {
+		uint32_t depth_value;			// depth value
+		uint32_t color_value;			// color value
+		uint32_t window_width;			// window width
+		uint32_t window_height;			// window height
+	};
+	
 	// create device
 	Device device(window);
 	if(!device) return 1;
 	
-	// check mesh shader support
-	if(!device.hasShader(Shader::TypeMesh)) {
-		TS_LOG(Error, "mesh shader is not supported\n");
+	// check compute shader support
+	if(!device.hasShader(Shader::TypeCompute)) {
+		TS_LOG(Error, "compute shader is not supported\n");
 		return 0;
 	}
 	
 	// create pipeline
 	Pipeline pipeline = device.createPipeline();
-	pipeline.setUniformMask(0, Shader::MaskAll);
-	pipeline.setStorageMasks(0, 5, Shader::MaskTask | Shader::MaskMesh, false);
-	pipeline.setColorFormat(window.getColorFormat());
-	pipeline.setDepthFormat(window.getDepthFormat());
-	pipeline.setDepthFunc(Pipeline::DepthFuncGreater);
 	pipeline.addAttribute(Pipeline::AttributePosition, FormatRGBAf32, 0, offsetof(Vertex, position), sizeof(Vertex));
 	pipeline.addAttribute(Pipeline::AttributeNormal, FormatRGBAf32, 0, offsetof(Vertex, normal), sizeof(Vertex));
-	if(!pipeline.loadShaderGLSL(Shader::TypeTask, "main.shader", "TASK_SHADER=1; GROUP_SIZE=%uu; MAX_GEOMETRIES=%u", task_group_size, max_geometries)) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeMesh, "main.shader", "MESH_SHADER=1; GROUP_SIZE=%uu; MAX_GEOMETRIES=%u; MAX_VERTICES=%uu; MAX_PRIMITIVES=%uu", mesh_group_size, max_geometries, max_attributes, max_primitives)) return 1;
-	if(!pipeline.loadShaderGLSL(Shader::TypeFragment, "main.shader", "FRAGMENT_SHADER=1")) return 1;
-	if(!pipeline.create()) return 1;
+	
+	// create draw pipeline
+	Pipeline draw_pipeline = device.createPipeline();
+	draw_pipeline.setTextureMask(0, Shader::MaskFragment);
+	draw_pipeline.setColorFormat(window.getColorFormat());
+	draw_pipeline.setDepthFormat(window.getDepthFormat());
+	if(!draw_pipeline.loadShaderGLSL(Shader::TypeVertex, "main.shader", "VERTEX_SHADER=1")) return 1;
+	if(!draw_pipeline.loadShaderGLSL(Shader::TypeFragment, "main.shader", "FRAGMENT_SHADER=1")) return 1;
+	if(!draw_pipeline.create()) return 1;
+	
+	// create clear kernel
+	Kernel clear_kernel = device.createKernel().setUniforms(1).setSurfaces(2);
+	if(!clear_kernel.loadShaderGLSL("main.shader", "CLEAR_SHADER=1")) return 1;
+	if(!clear_kernel.create()) return 1;
+	
+	// create draw kernel
+	Kernel draw_kernel = device.createKernel().setUniforms(1).setStorages(5, false);
+	if(!draw_kernel.loadShaderGLSL("main.shader", "DRAW_SHADER=1; GROUP_SIZE=%uu", draw_group_size)) return 1;
+	if(!draw_kernel.create()) return 1;
+	
+	// create raster kernel
+	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(5, false).setSurfaces(2);
+	if(!raster_kernel.loadShaderGLSL("main.shader", "RASTER_SHADER=1; GROUP_SIZE=%uu; MAX_VERTICES=%uu", raster_group_size, max_attributes)) return 1;
+	if(!raster_kernel.create()) return 1;
 	
 	// create mesh
 	if(!File::isFile("model.mesh")) {
@@ -215,10 +239,17 @@ int32_t main(int32_t argc, char **argv) {
 	Buffer children_buffer = device.createBuffer(Buffer::FlagStorage, children_indices.get(), children_indices.bytes());
 	if(!children_buffer) return 1;
 	
+	// create batch buffer
+	Buffer batch_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(uint32_t) * instance_parameters.size() * max_geometries);
+	if(!batch_buffer) return 1;
+	
+	// create indirect buffer
+	Buffer indirect_buffer = device.createBuffer(Buffer::FlagStorage | Buffer::FlagIndirect, sizeof(Compute::DispatchIndirect));
+	if(!indirect_buffer) return 1;
+	
 	// create target
 	Target target = device.createTarget(window);
 	target.setClearColor(Color::gray * 0.25f);
-	target.setClearDepth(0.0f);
 	
 	// create query
 	Query time_query;
@@ -226,6 +257,10 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create panel
 	Panel panel(device);
+	
+	// compute surfaces
+	Texture depth_surface;
+	Texture color_surface;
 	
 	// main loop
 	window.run([&]() -> bool {
@@ -264,17 +299,46 @@ int32_t main(int32_t argc, char **argv) {
 		// update instances buffer
 		if(!device.setBuffer(instances_buffer, instance_parameters.get(), instance_parameters.bytes())) return false;
 		
-		// flush instances buffer
-		device.flushBuffer(instances_buffer);
+		// clear indirect buffer
+		Compute::DispatchIndirect indirect_data = { 0, 1, 1, 0 };
+		if(!device.setBuffer(indirect_buffer, &indirect_data, sizeof(indirect_data))) return false;
 		
-		// window target
-		target.begin();
+		// flush buffers
+		device.flushBuffers({ instances_buffer, indirect_buffer });
+		
+		// create surfaces
+		uint32_t width = window.getWidth();
+		uint32_t height = window.getHeight();
+		if(window.getKeyboardKey('5')) {
+			width = 1600;
+			height = 900;
+		}
+		if(!depth_surface || depth_surface.getWidth() != width || depth_surface.getHeight() != height) {
+			window.finish();
+			depth_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface | Texture::FlagBuffer);
+			color_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface | Texture::FlagBuffer);
+		}
+		
 		{
-			// create command list
-			Command command = device.createCommand(target);
+			Compute compute = device.createCompute();
 			
-			// set pipeline
-			command.setPipeline(pipeline);
+			// clear parameters
+			ClearParameters clear_parameters;
+			clear_parameters.depth_value = f32u32(0.0f).u;
+			clear_parameters.color_value = (Color::gray * 0.25f).getRGBAu8();
+			clear_parameters.window_width = window.getWidth();
+			clear_parameters.window_height = window.getHeight();
+			
+			// dispatch clear kernel
+			compute.setKernel(clear_kernel);
+			compute.setUniform(0, clear_parameters);
+			compute.setSurfaceTextures(0, {
+				depth_surface,
+				color_surface,
+			});
+			compute.dispatch(depth_surface);
+			
+			compute.barrier({depth_surface, color_surface});
 			
 			// common parameters
 			CommonParameters common_parameters;
@@ -283,10 +347,10 @@ int32_t main(int32_t argc, char **argv) {
 			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)window.getWidth() / window.getHeight(), 0.1f, true);
 			common_parameters.modelview = Matrix4x4f::lookAt(common_parameters.camera.xyz, Vector3f(0.0f, 0.0f, -16.0f), Vector3f(0.0f, 0.0f, 1.0f));
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
-			common_parameters.grid_size = grid_size;
-			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * window.getHeight() * (1.0f / 6.0f);
-			common_parameters.window_width = (float32_t)window.getWidth();
-			common_parameters.window_height = (float32_t)window.getHeight();
+			common_parameters.surface_stride = TS_ALIGN64(depth_surface.getWidth());
+			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * depth_surface.getHeight() * (1.0f / 6.0f);
+			common_parameters.window_width = (float32_t)depth_surface.getWidth();
+			common_parameters.window_height = (float32_t)depth_surface.getHeight();
 			common_parameters.time = time;
 			
 			// clip planes
@@ -302,26 +366,59 @@ int32_t main(int32_t argc, char **argv) {
 			if(window.getKeyboardKey('1')) common_parameters.projection_scale = 0.0f;
 			if(window.getKeyboardKey('2')) common_parameters.projection_scale = 1e6f;
 			
-			// set common parameters
-			command.setUniform(0, common_parameters);
-			
-			// set storage buffers
-			command.setStorageBuffers(0, {
-				instances_buffer,
-				geometries_buffer,
-				children_buffer,
-				vertex_buffer,
-				index_buffer,
-			});
-			
 			// begin query
-			if(time_query) command.beginQuery(time_query);
+			if(time_query) compute.beginQuery(time_query);
 				
-				// draw instances
-				command.drawMesh(grid_size, grid_size, grid_height);
+				// dispatch draw kernel
+				compute.setKernel(draw_kernel);
+				compute.setUniform(0, common_parameters);
+				compute.setStorageBuffers(0, {
+					instances_buffer,
+					geometries_buffer,
+					children_buffer,
+					indirect_buffer,
+					batch_buffer,
+				});
+				compute.dispatch(instance_parameters.size() * draw_group_size);
+				
+				compute.barrier({ indirect_buffer, batch_buffer });
+				
+				// dispatch raster kernel
+				compute.setKernel(raster_kernel);
+				compute.setUniform(0, common_parameters);
+				compute.setStorageBuffers(0, {
+					instances_buffer,
+					geometries_buffer,
+					batch_buffer,
+					vertex_buffer,
+					index_buffer,
+				});
+				compute.setSurfaceTextures(0, {
+					depth_surface,
+					color_surface,
+				});
+				compute.setIndirectBuffer(indirect_buffer);
+				compute.dispatchIndirect();
+				
+				compute.barrier({ depth_surface, color_surface });
 				
 			// end query
-			if(time_query) command.endQuery(time_query);
+			if(time_query) compute.endQuery(time_query);
+		}
+		
+		// flush surface
+		device.flushTexture(color_surface);
+		
+		// window target
+		target.begin();
+		{
+			// create command list
+			Command command = device.createCommand(target);
+			
+			// set pipeline
+			command.setPipeline(draw_pipeline);
+			command.setTexture(0, color_surface);
+			command.drawArrays(3);
 			
 			// draw panel
 			panel.draw(command, target);

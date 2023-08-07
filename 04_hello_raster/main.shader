@@ -24,59 +24,114 @@
 
 /*
  */
-#define Vector4f	vec4
-#define float32_t	float
-#define uint32_t	uint
-
-#include "main.h"
-
-/*
- */
-layout(row_major, binding = 0) uniform CommonParameters {
-	mat4 projection;
-	mat4 modelview;
-	vec4 planes[4];
-	vec4 signs[4];
-	vec4 camera;
-	uint grid_size;
-	float projection_scale;
-	float window_width;
-	float window_height;
-	float time;
-};
-	
-/*
- */
-#if TASK_SHADER || MESH_SHADER
+#if DRAW_SHADER || RASTER_SHADER
 	
 	/*
 	 */
-	struct TaskOut {
-		uint instance;
-		uint geometries[MAX_GEOMETRIES];
-	};
+	#define Vector4f	vec4
+	#define float32_t	float
+	#define uint32_t	uint
 	
-	layout(std430, binding = 1) readonly buffer InstancesBuffer { vec4 instances_buffer[]; };
-	layout(std430, binding = 2) readonly buffer GeometriesBuffer { GeometryParameters geometries_buffer[]; };
-	layout(std430, binding = 3) readonly buffer ChildrenBuffer { uint children_buffer[]; };
-	layout(std430, binding = 4) readonly buffer VerticesBuffer { Vertex vertices_buffer[]; };
-	layout(std430, binding = 5) readonly buffer IndicesBuffer { uint indices_buffer[]; };
+	#include "main.h"
+	
+	/*
+	 */
+	layout(row_major, binding = 0) uniform CommonParameters {
+		mat4 projection;
+		mat4 modelview;
+		vec4 planes[4];
+		vec4 signs[4];
+		vec4 camera;
+		uint surface_stride;
+		float projection_scale;
+		float window_width;
+		float window_height;
+		float time;
+	};
 	
 #endif
 
 /*
  */
-#if TASK_SHADER
+#if VERTEX_SHADER
+		
+	layout(location = 0) out vec2 s_texcoord;
+	
+	/*
+	 */
+	void main() {
+		
+		vec2 texcoord = vec2(0.0f);
+		if(gl_VertexIndex == 0) texcoord.x = 2.0f;
+		if(gl_VertexIndex == 2) texcoord.y = 2.0f;
+		
+		gl_Position = vec4(texcoord * 2.0f - 1.0f, 0.0f, 1.0f);
+		
+		s_texcoord = texcoord;
+	}
+	
+#elif FRAGMENT_SHADER
+	
+	layout(binding = 0, set = 0) uniform utexture2D in_texture;
+	
+	layout(location = 0) in vec2 s_texcoord;
+	
+	layout(location = 0) out vec4 out_color;
+	
+	/*
+	 */
+	void main() {
+		
+		ivec2 size = textureSize(in_texture, 0);
+		
+		ivec2 texcoord = ivec2(s_texcoord * size);
+		
+		uint value = texelFetch(in_texture, texcoord, 0).x;
+		
+		out_color = unpackUnorm4x8(value);
+	}
+	
+#elif CLEAR_SHADER
+	
+	layout(local_size_x = 8, local_size_y = 8) in;
+	
+	layout(binding = 0) uniform ClearParameters {
+		uint depth_value;
+		uint color_value;
+		uint window_width;
+		uint window_height;
+	};
+	
+	layout(binding = 0, set = 1, r32ui) uniform uimage2D depth_surface;
+	layout(binding = 1, set = 1, r32ui) uniform uimage2D color_surface;
+	
+	/*
+	 */
+	void main() {
+		
+		ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+		
+		[[branch]] if(global_id.x < window_width && global_id.y < window_height) {
+			
+			imageStore(depth_surface, global_id, uvec4(depth_value));
+			imageStore(color_surface, global_id, uvec4(color_value));
+		}
+	}	
+	
+#elif DRAW_SHADER
 	
 	#define LOCAL_STACK		8
 	#define SHARED_STACK	256
 	
+	layout(std430, binding = 1) readonly buffer InstancesBuffer { vec4 instances_buffer[]; };
+	layout(std430, binding = 2) readonly buffer GeometriesBuffer { GeometryParameters geometries_buffer[]; };
+	layout(std430, binding = 3) readonly buffer ChildrenBuffer { uint children_buffer[]; };
+	layout(std430, binding = 4) buffer IndirectBuffer { uint indirect_buffer[]; };
+	layout(std430, binding = 5) buffer RasterBuffer { uint batch_buffer[]; };
+	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	taskPayloadSharedEXT TaskOut OUT;
-	
 	shared vec4 transform[3];
-	shared int num_geometries;
 	
 	shared int shared_depth;
 	shared uint shared_stack[SHARED_STACK];
@@ -113,22 +168,16 @@ layout(row_major, binding = 0) uniform CommonParameters {
 	void main() {
 		
 		uint local_id = gl_LocalInvocationIndex;
-		uint group_id = (gl_WorkGroupID.z * grid_size + gl_WorkGroupID.y) * grid_size + gl_WorkGroupID.x;
+		uint group_id = gl_WorkGroupID.x;
 		
 		// task parameters
 		[[branch]] if(local_id == 0u) {
-			
-			// instance index
-			OUT.instance = group_id;
 			
 			// instance transform
 			uint instance = group_id * 3u;
 			transform[0] = instances_buffer[instance + 0u];
 			transform[1] = instances_buffer[instance + 1u];
 			transform[2] = instances_buffer[instance + 2u];
-			
-			// clear geometries
-			num_geometries = 0;
 			
 			// first geometry
 			shared_depth = 1;
@@ -207,8 +256,8 @@ layout(row_major, binding = 0) uniform CommonParameters {
 					
 					// draw geometry
 					[[branch]] if(is_visible) {
-						int index = atomicIncrement(num_geometries);
-						[[branch]] if(index < MAX_GEOMETRIES) OUT.geometries[index] = geometry_index;
+						uint index = atomicIncrement(indirect_buffer[0]);
+						batch_buffer[index] = (group_id << 16u) | geometry_index;
 					}
 				}
 			}
@@ -228,31 +277,139 @@ layout(row_major, binding = 0) uniform CommonParameters {
 			atomicMin(shared_depth, SHARED_STACK);
 			memoryBarrierShared(); barrier();
 		}
-		
-		// emit meshes
-		EmitMeshTasksEXT(min(num_geometries, MAX_GEOMETRIES), 1, 1);
 	}
 	
-#elif MESH_SHADER
+#elif RASTER_SHADER
 	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	layout(triangles, max_vertices = MAX_VERTICES, max_primitives = MAX_PRIMITIVES) out;
+	layout(std430, binding = 1) readonly buffer InstancesBuffer { vec4 instances_buffer[]; };
+	layout(std430, binding = 2) readonly buffer GeometriesBuffer { GeometryParameters geometries_buffer[]; };
+	layout(std430, binding = 3) readonly buffer RasterBuffer { uint batch_buffer[]; };
+	layout(std430, binding = 4) readonly buffer VerticesBuffer { Vertex vertices_buffer[]; };
+	layout(std430, binding = 5) readonly buffer IndicesBuffer { uint indices_buffer[]; };
 	
-	taskPayloadSharedEXT TaskOut IN;
-	
-	layout(location = 0) out VertexOut {
-		vec3 direction;
-		vec3 normal;
-		vec3 color;
-	} OUT[MAX_VERTICES];
+	#if CLAY_MTL
+		#pragma surface(0, 6)
+		#pragma surface(1, 7)
+		layout(std430, binding = 6) buffer DepthBuffer { uint depth_surface[]; };
+		layout(std430, binding = 7) buffer ColorBuffer { uint color_surface[]; };
+	#else
+		layout(binding = 0, set = 1, r32ui) uniform uimage2D depth_surface;
+		layout(binding = 1, set = 1, r32ui) uniform uimage2D color_surface;
+	#endif
 	
 	shared vec4 transform[3];
 	shared uint num_vertices;
 	shared uint base_vertex;
 	shared uint num_primitives;
 	shared uint base_primitive;
-	shared vec3 color;
+	
+	shared vec3 positions[MAX_VERTICES];
+	shared vec3 directions[MAX_VERTICES];
+	shared vec3 normals[MAX_VERTICES];
+	
+	shared vec3 geometry_color;
+	shared float split_position;
+	
+	/*
+	 */
+	void raster(uint i0, uint i1, uint i2) {
+		
+		// clip triangle
+		vec3 p0 = positions[i0];
+		vec3 p1 = positions[i1];
+		vec3 p2 = positions[i2];
+		[[branch]] if(p0.z < 0.0f || p1.z < 0.0f || p2.z < 0.0f) return;
+		
+		// backface culling
+		vec3 p10 = p1 - p0;
+		vec3 p20 = p2 - p0;
+		float det = p20.x * p10.y - p20.y * p10.x;
+		#if CLAY_VK
+			[[branch]] if(det <= 0.0f) return;
+		#else
+			[[branch]] if(det >= 0.0f) return;
+		#endif
+		
+		// triangle rect
+		float x0 = min(min(p0.x, p1.x), p2.x);
+		float y0 = min(min(p0.y, p1.y), p2.y);
+		float x1 = ceil(max(max(p0.x, p1.x), p2.x));
+		float y1 = ceil(max(max(p0.y, p1.y), p2.y));
+		[[branch]] if(x1 - floor(x0) < 2.0f || y1 - floor(y0) < 2.0f) return;
+		x0 = floor(x0 + 0.5f);
+		y0 = floor(y0 + 0.5f);
+		
+		// viewport cull
+		[[branch]] if(x1 < 0.0f || y1 < 0.0f || x0 >= window_width || y0 >= window_height) return;
+		x0 = max(x0, 0.0f); x1 = min(x1, window_width);
+		y0 = max(y0, 0.0f); y1 = min(y1, window_height);
+		
+		// triangle area
+		float area = (x1 - x0) * (y1 - y0);
+		[[branch]] if(area == 0.0f) return;
+		
+		// triangle parameters
+		float idet = 1.0f / det;
+		vec2 dx = vec2(-p20.y, p10.y) * idet;
+		vec2 dy = vec2(p20.x, -p10.x) * idet;
+		vec2 texcoord_x = dx * (x0 - p0.x);
+		vec2 texcoord_y = dy * (y0 - p0.y);
+		
+		vec3 d0 = directions[i0];
+		vec3 d10 = directions[i1] - d0;
+		vec3 d20 = directions[i2] - d0;
+		
+		vec3 n0 = normals[i0];
+		vec3 n10 = normals[i1] - n0;
+		vec3 n20 = normals[i2] - n0;
+		
+		for(float y = y0; y < y1; y += 1.0f) {
+			vec2 texcoord = texcoord_x + texcoord_y;
+			for(float x = x0; x < x1; x += 1.0f) {
+				[[branch]] if(texcoord.x > -1e-5f && texcoord.y > -1e-5f && texcoord.x + texcoord.y < 1.0f + 1e-5f) {
+					
+					uint z = floatBitsToUint(p10.z * texcoord.x + p20.z * texcoord.y + p0.z);
+					
+					#if CLAY_MTL
+						uint index = uint(surface_stride * y + x);
+						uint old_z = atomicMax(depth_surface[index], z);
+						[[branch]] if(old_z < z) {
+					#elif CLAY_GLES
+						uint old_z = imageLoad(depth_surface, ivec2(vec2(x, y))).x;
+						[[branch]] if(old_z < z) {
+							imageStore(depth_surface, ivec2(vec2(x, y)), uvec4(z));
+					#elif CLAY_WG
+						imageStore(depth_surface, ivec2(vec2(x, y)), uvec4(z));
+						{
+					#else
+						uint old_z = imageAtomicMax(depth_surface, ivec2(vec2(x, y)), z);
+						[[branch]] if(old_z < z) {
+					#endif
+						vec3 direction = normalize(d10 * texcoord.x + d20 * texcoord.y + d0);
+						vec3 normal = normalize(n10 * texcoord.x + n20 * texcoord.y + n0);
+						float diffuse = clamp(dot(direction, normal), 0.0f, 1.0f);
+						float specular = pow(clamp(dot(reflect(-direction, normal), direction), 0.0f, 1.0f), 16.0f);
+						vec3 color = (x < split_position) ? vec3(0.75f) : geometry_color;
+						uint c = packUnorm4x8(vec4(color * diffuse + specular, 1.0f));
+						if(abs(x - split_position) < 1.0f) c = 0u;
+						#if CLAY_MTL
+							atomicStore(color_surface[index], c);
+						#elif CLAY_GLES || CLAY_WG
+							imageStore(color_surface, ivec2(vec2(x, y)), uvec4(c));
+						#else
+							imageAtomicExchange(color_surface, ivec2(vec2(x, y)), c);
+						#endif
+					}
+				}
+				
+				texcoord += dx;
+			}
+			
+			texcoord_y += dy;
+		}
+	}
 	
 	/*
 	 */
@@ -264,14 +421,17 @@ layout(row_major, binding = 0) uniform CommonParameters {
 		// mesh parameters
 		[[branch]] if(local_id == 0u) {
 			
+			// raster group
+			uint index = batch_buffer[group_id];
+			
 			// instance transform
-			uint instance = IN.instance * 3u;
+			uint instance = (index >> 16u) * 3u;
 			transform[0] = instances_buffer[instance + 0u];
 			transform[1] = instances_buffer[instance + 1u];
 			transform[2] = instances_buffer[instance + 2u];
 			
 			// geometry parameterss
-			uint geometry = IN.geometries[group_id];
+			uint geometry = index & 0xffffu;
 			num_vertices = geometries_buffer[geometry].num_vertices;
 			base_vertex = geometries_buffer[geometry].base_vertex;
 			num_primitives = geometries_buffer[geometry].num_primitives;
@@ -279,12 +439,12 @@ layout(row_major, binding = 0) uniform CommonParameters {
 			
 			// mesh color
 			float seed = mod(instance + geometry * 93.7351f, 1024.0f);
-			color = cos(vec3(0.0f, 0.5f, 1.0f) * 3.14f + seed) * 0.5f + 0.5f;
+			geometry_color = cos(vec3(0.0f, 0.5f, 1.0f) * 3.14f + seed) * 0.5f + 0.5f;
+			
+			// split position
+			split_position = window_width * (cos(time) * 0.25f + 0.75f);
 		}
 		memoryBarrierShared(); barrier();
-		
-		// number of primitives
-		SetMeshOutputsEXT(num_vertices, num_primitives);
 		
 		// vertices
 		[[loop]] for(uint i = local_id; i < num_vertices; i += GROUP_SIZE) {
@@ -294,19 +454,20 @@ layout(row_major, binding = 0) uniform CommonParameters {
 			vec4 position = vec4(vertices_buffer[vertex].position.xyz, 1.0f);
 			vec3 normal = vertices_buffer[vertex].normal.xyz;
 			
-			// position
+			// transform position
 			position = vec4(dot(transform[0], position), dot(transform[1], position), dot(transform[2], position), 1.0f);
-			gl_MeshVerticesEXT[i].gl_Position = projection * (modelview * position);
 			
 			// camera direction
-			OUT[i].direction = camera.xyz - position.xyz;
+			directions[i] = camera.xyz - position.xyz;
 			
 			// normal vector
-			OUT[i].normal = vec3(dot(transform[0].xyz, normal), dot(transform[1].xyz, normal), dot(transform[2].xyz, normal));
+			normals[i] = vec3(dot(transform[0].xyz, normal), dot(transform[1].xyz, normal), dot(transform[2].xyz, normal));
 			
-			// color value
-			OUT[i].color = color;
+			// project position
+			position = projection * (modelview * position);
+			positions[i] = vec3((position.xy / position.w * 0.5f + 0.5f) * vec2(window_width, window_height) - 0.5f, position.z / position.w);
 		}
+		memoryBarrierShared(); barrier();
 		
 		// primitives
 		[[loop]] for(uint i = local_id; i < num_primitives; i += GROUP_SIZE) {
@@ -317,37 +478,9 @@ layout(row_major, binding = 0) uniform CommonParameters {
 			uint index_1 = (indices >> 10u) & 0x3ffu;
 			uint index_2 = (indices >> 20u) & 0x3ffu;
 			
-			// triangle indices
-			gl_PrimitiveTriangleIndicesEXT[i] = uvec3(index_0, index_1, index_2);
+			// raster triangle
+			raster(index_0, index_1, index_2);
 		}
-	}
-	
-#elif FRAGMENT_SHADER
-	
-	layout(location = 0) in VertexOut {
-		vec3 direction;
-		vec3 normal;
-		vec3 color;
-	} IN;
-	
-	layout(location = 0) out vec4 out_color;
-	
-	/*
-	 */
-	void main() {
-		
-		vec3 direction = normalize(IN.direction);
-		vec3 normal = normalize(IN.normal);
-		vec3 color = IN.color;
-		
-		float diffuse = clamp(dot(direction, normal), 0.0f, 1.0f);
-		float specular = pow(clamp(dot(reflect(-direction, normal), direction), 0.0f, 1.0f), 16.0f);
-		
-		float position = window_width * (cos(time) * 0.25f + 0.75f);
-		if(gl_FragCoord.x < position) color = vec3(0.75f);
-		
-		if(abs(gl_FragCoord.x - position) < 1.0f) out_color = vec4(0.0f);
-		else out_color = vec4(color, 1.0f) * diffuse + specular;
 	}
 	
 #endif
