@@ -163,8 +163,6 @@ int32_t main(int32_t argc, char **argv) {
 		Mesh graph_mesh;
 		TS_LOG(Message, "Creating Graph\n");
 		MeshGraph::create(graph_mesh, subdiv_mesh, max_attributes, max_primitives, nullptr, &async);
-		graph_mesh.optimizeAttributes(&async);
-		graph_mesh.optimizeIndices(&async);
 		
 		// save mesh
 		TS_LOG(Message, "Saving Mesh\n");
@@ -313,6 +311,18 @@ int32_t main(int32_t argc, char **argv) {
 			width = 1600;
 			height = 900;
 		}
+		if(window.getKeyboardKey('6')) {
+			width = 1920;
+			height = 1080;
+		}
+		if(window.getKeyboardKey('7')) {
+			width = 2560;
+			height = 1440;
+		}
+		if(window.getKeyboardKey('8')) {
+			width = 3840;
+			height = 2160;
+		}
 		if(!depth_surface || depth_surface.getWidth() != width || depth_surface.getHeight() != height) {
 			window.finish();
 			depth_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface | Texture::FlagBuffer);
@@ -326,8 +336,8 @@ int32_t main(int32_t argc, char **argv) {
 			ClearParameters clear_parameters;
 			clear_parameters.depth_value = f32u32(0.0f).u;
 			clear_parameters.color_value = (Color::gray * 0.25f).getRGBAu8();
-			clear_parameters.window_width = window.getWidth();
-			clear_parameters.window_height = window.getHeight();
+			clear_parameters.window_width = depth_surface.getWidth();
+			clear_parameters.window_height = depth_surface.getHeight();
 			
 			// dispatch clear kernel
 			compute.setKernel(clear_kernel);
@@ -344,7 +354,7 @@ int32_t main(int32_t argc, char **argv) {
 			CommonParameters common_parameters;
 			float32_t offset = 1.0f - Tellusim::cos(time * 0.2f);
 			common_parameters.camera = Matrix4x4f::rotateZ(time * 2.0f) * Vector4f(Vector3f(32.0f + offset * 24.0f, 0.0f, 8.0f + offset * 8.0f), 1.0f);
-			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)window.getWidth() / window.getHeight(), 0.1f, true);
+			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)depth_surface.getWidth() / depth_surface.getHeight(), 0.1f, true);
 			common_parameters.modelview = Matrix4x4f::lookAt(common_parameters.camera.xyz, Vector3f(0.0f, 0.0f, -16.0f), Vector3f(0.0f, 0.0f, 1.0f));
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.surface_stride = TS_ALIGN64(depth_surface.getWidth());

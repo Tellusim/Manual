@@ -139,8 +139,6 @@ int32_t main(int32_t argc, char **argv) {
 		Mesh graph_mesh;
 		TS_LOG(Message, "Creating Graph\n");
 		MeshGraph::create(graph_mesh, subdiv_mesh, max_attributes, max_primitives, nullptr, &async);
-		graph_mesh.optimizeAttributes(&async);
-		graph_mesh.optimizeIndices(&async);
 		
 		// save mesh
 		TS_LOG(Message, "Saving Mesh\n");
@@ -277,6 +275,11 @@ int32_t main(int32_t argc, char **argv) {
 			command.setPipeline(pipeline);
 			
 			// common parameters
+			uint32_t height = window.getHeight();
+			if(window.getKeyboardKey('5')) height = 900;
+			if(window.getKeyboardKey('6')) height = 1080;
+			if(window.getKeyboardKey('7')) height = 1440;
+			if(window.getKeyboardKey('8')) height = 2160;
 			CommonParameters common_parameters;
 			float32_t offset = 1.0f - Tellusim::cos(time * 0.2f);
 			common_parameters.camera = Matrix4x4f::rotateZ(time * 2.0f) * Vector4f(Vector3f(32.0f + offset * 24.0f, 0.0f, 8.0f + offset * 8.0f), 1.0f);
@@ -284,7 +287,7 @@ int32_t main(int32_t argc, char **argv) {
 			common_parameters.modelview = Matrix4x4f::lookAt(common_parameters.camera.xyz, Vector3f(0.0f, 0.0f, -16.0f), Vector3f(0.0f, 0.0f, 1.0f));
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
 			common_parameters.grid_size = grid_size;
-			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * window.getHeight() * (1.0f / 6.0f);
+			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * height * (1.0f / 6.0f);
 			common_parameters.window_width = (float32_t)window.getWidth();
 			common_parameters.window_height = (float32_t)window.getHeight();
 			common_parameters.time = time;
