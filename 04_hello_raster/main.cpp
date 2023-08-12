@@ -54,7 +54,7 @@ int32_t main(int32_t argc, char **argv) {
 	// create window
 	Window window(app.getPlatform(), app.getDevice());
 	if(!window || !window.setSize(app.getWidth(), app.getHeight())) return 1;
-	if(!window.create("03 Hello Raster") || !window.setHidden(false)) return 1;
+	if(!window.create("04 Hello Raster") || !window.setHidden(false)) return 1;
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
@@ -80,18 +80,17 @@ int32_t main(int32_t argc, char **argv) {
 		Vector4f planes[4];				// clipping planes
 		Vector4f signs[4];				// clipping signs
 		Vector4f camera;				// camera position
-		uint32_t surface_stride;		// surface stride
 		float32_t projection_scale;		// projection scale
-		float32_t window_width;			// window width
-		float32_t window_height;		// window height
+		float32_t surface_width;		// surface width
+		float32_t surface_height;		// surface height
 		float32_t time;
 	};
 	
 	struct ClearParameters {
 		uint32_t depth_value;			// depth value
 		uint32_t color_value;			// color value
-		uint32_t window_width;			// window width
-		uint32_t window_height;			// window height
+		uint32_t surface_width;			// surface width
+		uint32_t surface_height;		// surface height
 	};
 	
 	// create device
@@ -119,7 +118,7 @@ int32_t main(int32_t argc, char **argv) {
 	if(!draw_pipeline.create()) return 1;
 	
 	// create clear kernel
-	Kernel clear_kernel = device.createKernel().setUniforms(1).setSurfaces(2);
+	Kernel clear_kernel = device.createKernel().setUniforms(1).setStorages(1, false).setSurfaces(1);
 	if(!clear_kernel.loadShaderGLSL("main.shader", "CLEAR_SHADER=1")) return 1;
 	if(!clear_kernel.create()) return 1;
 	
@@ -129,7 +128,7 @@ int32_t main(int32_t argc, char **argv) {
 	if(!draw_kernel.create()) return 1;
 	
 	// create raster kernel
-	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(5, false).setSurfaces(2);
+	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(6, false).setSurfaces(1);
 	if(!raster_kernel.loadShaderGLSL("main.shader", "RASTER_SHADER=1; GROUP_SIZE=%uu; MAX_VERTICES=%uu", raster_group_size, max_attributes)) return 1;
 	if(!raster_kernel.create()) return 1;
 	
@@ -257,7 +256,7 @@ int32_t main(int32_t argc, char **argv) {
 	Panel panel(device);
 	
 	// compute surfaces
-	Texture depth_surface;
+	Buffer depth_buffer;
 	Texture color_surface;
 	
 	// main loop
@@ -323,10 +322,12 @@ int32_t main(int32_t argc, char **argv) {
 			width = 3840;
 			height = 2160;
 		}
-		if(!depth_surface || depth_surface.getWidth() != width || depth_surface.getHeight() != height) {
-			window.finish();
-			depth_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface | Texture::FlagBuffer);
-			color_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface | Texture::FlagBuffer);
+		if(!color_surface || color_surface.getWidth() != width || color_surface.getHeight() != height) {
+			device.releaseBuffer(depth_buffer);
+			device.releaseTexture(color_surface);
+			depth_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(uint32_t) * width * height);
+			color_surface = device.createTexture2D(FormatRu32, width, height, Texture::FlagSurface);
+			if(!depth_buffer || !color_surface) return false;
 		}
 		
 		{
@@ -336,31 +337,29 @@ int32_t main(int32_t argc, char **argv) {
 			ClearParameters clear_parameters;
 			clear_parameters.depth_value = f32u32(0.0f).u;
 			clear_parameters.color_value = (Color::gray * 0.25f).getRGBAu8();
-			clear_parameters.window_width = depth_surface.getWidth();
-			clear_parameters.window_height = depth_surface.getHeight();
+			clear_parameters.surface_width = color_surface.getWidth();
+			clear_parameters.surface_height = color_surface.getHeight();
 			
 			// dispatch clear kernel
 			compute.setKernel(clear_kernel);
 			compute.setUniform(0, clear_parameters);
-			compute.setSurfaceTextures(0, {
-				depth_surface,
-				color_surface,
-			});
-			compute.dispatch(depth_surface);
+			compute.setStorageBuffer(0, depth_buffer);
+			compute.setSurfaceTexture(0, color_surface);
+			compute.dispatch(color_surface);
 			
-			compute.barrier({depth_surface, color_surface});
+			compute.barrier(depth_buffer);
+			compute.barrier(color_surface);
 			
 			// common parameters
 			CommonParameters common_parameters;
 			float32_t offset = 1.0f - Tellusim::cos(time * 0.2f);
 			common_parameters.camera = Matrix4x4f::rotateZ(time * 2.0f) * Vector4f(Vector3f(32.0f + offset * 24.0f, 0.0f, 8.0f + offset * 8.0f), 1.0f);
-			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)depth_surface.getWidth() / depth_surface.getHeight(), 0.1f, true);
+			common_parameters.projection = Matrix4x4f::perspective(60.0f, (float32_t)color_surface.getWidth() / color_surface.getHeight(), 0.1f, true);
 			common_parameters.modelview = Matrix4x4f::lookAt(common_parameters.camera.xyz, Vector3f(0.0f, 0.0f, -16.0f), Vector3f(0.0f, 0.0f, 1.0f));
 			if(target.isFlipped()) common_parameters.projection = Matrix4x4f::scale(1.0f, -1.0f, 1.0f) * common_parameters.projection;
-			common_parameters.surface_stride = TS_ALIGN64(depth_surface.getWidth());
-			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * depth_surface.getHeight() * (1.0f / 6.0f);
-			common_parameters.window_width = (float32_t)depth_surface.getWidth();
-			common_parameters.window_height = (float32_t)depth_surface.getHeight();
+			common_parameters.projection_scale = Tellusim::abs(common_parameters.projection.m11) * color_surface.getHeight() * (1.0f / 6.0f);
+			common_parameters.surface_width = (float32_t)color_surface.getWidth();
+			common_parameters.surface_height = (float32_t)color_surface.getHeight();
 			common_parameters.time = time;
 			
 			// clip planes
@@ -402,15 +401,14 @@ int32_t main(int32_t argc, char **argv) {
 					batch_buffer,
 					vertex_buffer,
 					index_buffer,
+					depth_buffer,
 				});
-				compute.setSurfaceTextures(0, {
-					depth_surface,
-					color_surface,
-				});
+				compute.setSurfaceTexture(0, color_surface);
 				compute.setIndirectBuffer(indirect_buffer);
 				compute.dispatchIndirect();
 				
-				compute.barrier({ depth_surface, color_surface });
+				compute.barrier(depth_buffer);
+				compute.barrier(color_surface);
 				
 			// end query
 			if(time_query) compute.endQuery(time_query);

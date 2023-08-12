@@ -42,10 +42,9 @@
 		vec4 planes[4];
 		vec4 signs[4];
 		vec4 camera;
-		uint surface_stride;
 		float projection_scale;
-		float window_width;
-		float window_height;
+		float surface_width;
+		float surface_height;
 		float time;
 	};
 	
@@ -98,12 +97,12 @@
 	layout(binding = 0) uniform ClearParameters {
 		uint depth_value;
 		uint color_value;
-		uint window_width;
-		uint window_height;
+		uint surface_width;
+		uint surface_height;
 	};
 	
-	layout(binding = 0, set = 1, r32ui) uniform uimage2D depth_surface;
-	layout(binding = 1, set = 1, r32ui) uniform uimage2D color_surface;
+	layout(std430, binding = 1) buffer DepthBuffer { uint depth_buffer[]; };
+	layout(binding = 0, set = 1, r32ui) uniform uimage2D color_surface;
 	
 	/*
 	 */
@@ -111,9 +110,8 @@
 		
 		ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
 		
-		[[branch]] if(global_id.x < window_width && global_id.y < window_height) {
-			
-			imageStore(depth_surface, global_id, uvec4(depth_value));
+		[[branch]] if(global_id.x < surface_width && global_id.y < surface_height) {
+			depth_buffer[surface_width * global_id.y + global_id.x] = depth_value;
 			imageStore(color_surface, global_id, uvec4(color_value));
 		}
 	}	
@@ -180,7 +178,11 @@
 			transform[2] = instances_buffer[instance + 2u];
 			
 			// first geometry
-			shared_depth = 1;
+			#if CLAY_WG
+				atomicStore(shared_depth, 1);
+			#else
+				shared_depth = 1;
+			#endif
 			shared_stack[0] = 0;
 		}
 		memoryBarrierShared(); barrier();
@@ -188,7 +190,11 @@
 		// graph intersection
 		int local_depth = 0;
 		uint local_stack[LOCAL_STACK];
-		[[loop]] while(atomicLoad(shared_depth) > 0) {
+		#if CLAY_WG
+			[[unroll]] for(uint iteration = 0u; iteration < 64u; iteration++) {
+		#else
+			[[loop]] while(atomicLoad(shared_depth) > 0) {
+		#endif
 			
 			// stack barrier
 			memoryBarrierShared(); barrier();
@@ -256,7 +262,13 @@
 					
 					// draw geometry
 					[[branch]] if(is_visible) {
-						uint index = atomicIncrement(indirect_buffer[0]);
+						#if CLAY_WG
+							uint index = atomicIncrement(indirect_buffer[3]);
+							atomicMax(indirect_buffer[1], (index + 255u) / 256u);
+							atomicMax(indirect_buffer[0], min(index, 256u));
+						#else
+							uint index = atomicIncrement(indirect_buffer[0]);
+						#endif
 						batch_buffer[index] = (group_id << 16u) | geometry_index;
 					}
 				}
@@ -289,15 +301,8 @@
 	layout(std430, binding = 4) readonly buffer VerticesBuffer { Vertex vertices_buffer[]; };
 	layout(std430, binding = 5) readonly buffer IndicesBuffer { uint indices_buffer[]; };
 	
-	#if CLAY_MTL
-		#pragma surface(0, 6)
-		#pragma surface(1, 7)
-		layout(std430, binding = 6) buffer DepthBuffer { uint depth_surface[]; };
-		layout(std430, binding = 7) buffer ColorBuffer { uint color_surface[]; };
-	#else
-		layout(binding = 0, set = 1, r32ui) uniform uimage2D depth_surface;
-		layout(binding = 1, set = 1, r32ui) uniform uimage2D color_surface;
-	#endif
+	layout(std430, binding = 6) buffer DepthBuffer { uint depth_buffer[]; };
+	layout(binding = 0, set = 1, r32ui) uniform uimage2D color_surface;
 	
 	shared vec4 transform[3];
 	shared uint num_vertices;
@@ -342,9 +347,9 @@
 		y0 = floor(y0 + 0.5f);
 		
 		// viewport cull
-		[[branch]] if(x1 < 0.0f || y1 < 0.0f || x0 >= window_width || y0 >= window_height) return;
-		x0 = max(x0, 0.0f); x1 = min(x1, window_width);
-		y0 = max(y0, 0.0f); y1 = min(y1, window_height);
+		[[branch]] if(x1 < 0.0f || y1 < 0.0f || x0 >= surface_width || y0 >= surface_height) return;
+		x0 = max(x0, 0.0f); x1 = min(x1, surface_width);
+		y0 = max(y0, 0.0f); y1 = min(y1, surface_height);
 		
 		// triangle area
 		float area = (x1 - x0) * (y1 - y0);
@@ -372,31 +377,26 @@
 					
 					uint z = floatBitsToUint(p10.z * texcoord.x + p20.z * texcoord.y + p0.z);
 					
-					#if CLAY_MTL
-						uint index = uint(surface_stride * y + x);
-						uint old_z = atomicMax(depth_surface[index], z);
-						[[branch]] if(old_z < z) {
-					#elif CLAY_GLES
-						uint old_z = imageLoad(depth_surface, ivec2(vec2(x, y))).x;
-						[[branch]] if(old_z < z) {
-							imageStore(depth_surface, ivec2(vec2(x, y)), uvec4(z));
-					#elif CLAY_WG
-						imageStore(depth_surface, ivec2(vec2(x, y)), uvec4(z));
-						{
-					#else
-						uint old_z = imageAtomicMax(depth_surface, ivec2(vec2(x, y)), z);
-						[[branch]] if(old_z < z) {
-					#endif
+					// depth test
+					uint index = uint(surface_width * y + x);
+					uint old_z = atomicMax(depth_buffer[index], z);
+					[[branch]] if(old_z < z) {
+						
+						// interpolate attributes
 						vec3 direction = normalize(d10 * texcoord.x + d20 * texcoord.y + d0);
 						vec3 normal = normalize(n10 * texcoord.x + n20 * texcoord.y + n0);
+						
+						// light color
 						float diffuse = clamp(dot(direction, normal), 0.0f, 1.0f);
 						float specular = pow(clamp(dot(reflect(-direction, normal), direction), 0.0f, 1.0f), 16.0f);
+						
+						// pack color
 						vec3 color = (x < split_position) ? vec3(0.75f) : geometry_color;
 						uint c = packUnorm4x8(vec4(color * diffuse + specular, 1.0f));
 						if(abs(x - split_position) < 1.0f) c = 0u;
-						#if CLAY_MTL
-							atomicStore(color_surface[index], c);
-						#elif CLAY_GLES || CLAY_WG
+						
+						// write color
+						#if CLAY_GLES || CLAY_MTL || CLAY_WG
 							imageStore(color_surface, ivec2(vec2(x, y)), uvec4(c));
 						#else
 							imageAtomicExchange(color_surface, ivec2(vec2(x, y)), c);
@@ -416,7 +416,11 @@
 	void main() {
 		
 		uint local_id = gl_LocalInvocationIndex;
-		uint group_id = gl_WorkGroupID.x;
+		#if CLAY_WG
+			uint group_id = gl_WorkGroupID.y * 256u + gl_WorkGroupID.x;
+		#else
+			uint group_id = gl_WorkGroupID.x;
+		#endif
 		
 		// mesh parameters
 		[[branch]] if(local_id == 0u) {
@@ -442,7 +446,7 @@
 			geometry_color = cos(vec3(0.0f, 0.5f, 1.0f) * 3.14f + seed) * 0.5f + 0.5f;
 			
 			// split position
-			split_position = window_width * (cos(time) * 0.25f + 0.75f);
+			split_position = surface_width * (cos(time) * 0.25f + 0.75f);
 		}
 		memoryBarrierShared(); barrier();
 		
@@ -465,7 +469,7 @@
 			
 			// project position
 			position = projection * (modelview * position);
-			positions[i] = vec3((position.xy / position.w * 0.5f + 0.5f) * vec2(window_width, window_height) - 0.5f, position.z / position.w);
+			positions[i] = vec3((position.xy / position.w * 0.5f + 0.5f) * vec2(surface_width, surface_height) - 0.5f, position.z / position.w);
 		}
 		memoryBarrierShared(); barrier();
 		
