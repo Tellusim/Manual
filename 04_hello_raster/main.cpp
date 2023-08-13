@@ -246,7 +246,6 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create target
 	Target target = device.createTarget(window);
-	target.setClearColor(Color::gray * 0.25f);
 	
 	// create query
 	Query time_query;
@@ -258,6 +257,10 @@ int32_t main(int32_t argc, char **argv) {
 	// compute surfaces
 	Buffer depth_buffer;
 	Texture color_surface;
+	
+	// print info
+	TS_LOGF(Message, "Vertex: %s\n", String::fromBytes(vertex_buffer.getSize()).get());
+	TS_LOGF(Message, "Index: %s\n", String::fromBytes(index_buffer.getSize()).get());
 	
 	// main loop
 	window.run([&]() -> bool {
