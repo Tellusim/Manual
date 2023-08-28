@@ -65,8 +65,8 @@ namespace Tellusim {
 			void update(const Window &window, const Device &device, const Target &target) {
 				
 				/// fps counter
-				if(frames++ == 10) {
-					float64_t current = Time::seconds();
+				float64_t current = Time::seconds();
+				if(frames++ && current - time > 1.0) {
 					fps_text.setText(String::format("FPS: %.1f", frames / (current - time)));
 					time = current;
 					frames = 0;
