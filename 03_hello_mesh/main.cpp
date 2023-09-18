@@ -89,6 +89,9 @@ int32_t main(int32_t argc, char **argv) {
 	Device device(window);
 	if(!device) return 1;
 	
+	// device info
+	TS_LOGF(Message, "Device: %s\n", device.getName().get());
+
 	// check mesh shader support
 	if(!device.hasShader(Shader::TypeMesh)) {
 		TS_LOG(Error, "mesh shader is not supported\n");

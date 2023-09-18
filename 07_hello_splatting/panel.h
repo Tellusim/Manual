@@ -68,7 +68,8 @@ namespace Tellusim {
 				/// fps counter
 				float64_t current = Time::seconds();
 				if(frames++ && current - time > 1.0) {
-					fps_text.setText(String::format("FPS: %.1f", frames / (current - time)));
+					fps = (float32_t)(frames / (current - time));
+					fps_text.setText(String::format("FPS: %.1f", fps));
 					time = current;
 					frames = 0;
 				}
@@ -96,6 +97,9 @@ namespace Tellusim {
 				info_text.setText(info);
 			}
 			
+			/// current FPS
+			TS_INLINE float32_t getFps() const { return fps; }
+			
 		private:
 			
 			Canvas canvas;
@@ -107,6 +111,7 @@ namespace Tellusim {
 			
 			uint32_t frames = 0;
 			float64_t time = 0.0;
+			float32_t fps = 60.0f;
 	};
 };
 

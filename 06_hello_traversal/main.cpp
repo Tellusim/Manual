@@ -74,6 +74,9 @@ int32_t main(int32_t argc, char **argv) {
 	Device device(window);
 	if(!device) return 1;
 	
+	// device info
+	TS_LOGF(Message, "Device: %s\n", device.getName().get());
+	
 	// check ray tracing support
 	if(!device.getFeatures().rayTracing) {
 		TS_LOG(Error, "ray tracing is not supported\n");
@@ -337,14 +340,8 @@ int32_t main(int32_t argc, char **argv) {
 		// create surface
 		uint32_t width = window.getWidth();
 		uint32_t height = window.getHeight();
-		if(window.getKeyboardKey('2')) {
-			width = 1600;
-			height = 900;
-		}
-		if(window.getKeyboardKey('3')) {
-			width = 3840;
-			height = 2160;
-		}
+		if(window.getKeyboardKey('2')) { width = 1600; height = 900; }
+		if(window.getKeyboardKey('3')) { width = 3840; height = 2160; }
 		if(!surface || surface.getWidth() != width || surface.getHeight() != height) {
 			device.releaseTexture(surface);
 			surface = device.createTexture2D(FormatRGBAu8n, width, height, Texture::FlagSurface);

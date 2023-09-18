@@ -23,6 +23,7 @@
 #ifndef __PANEL_H__
 #define __PANEL_H__
 
+#include <core/TellusimTime.h>
 #include <interface/TellusimCanvas.h>
 #include <interface/TellusimControls.h>
 

@@ -269,9 +269,9 @@ int32_t main(int32_t argc, char **argv) {
 			float32_t color = time * 0.5f;
 			float32_t angle = time + 360.0f * i / emitters.size();
 			emitters[i].position.xyz = Matrix4x3f::rotateZ(angle * 8.0f) * Vector3f(32.0f * cos(time), 0.0f, 8.0f);
-			emitters[i].color_mean.r = cos(color + Pi05) * 0.8f + 0.2f;
-			emitters[i].color_mean.g = cos(color - Pi05) * 0.8f + 0.2f;
-			emitters[i].color_mean.b = cos(color - Pi) * 0.8f + 0.2f;
+			emitters[i].color_mean.r = max(cos(color + Pi05) * 0.8f + 0.2f, 0.0f);
+			emitters[i].color_mean.g = max(cos(color - Pi05) * 0.8f + 0.2f, 0.0f);
+			emitters[i].color_mean.b = max(cos(color - Pi) * 0.8f + 0.2f, 0.0f);
 			if((i & 1) == 0) {
 				emitters[i].velocity_spread = sin(time) * 4.0f + 2.0f;
 				emitters[i].velocity_damping = sin(time) * 0.5f + 0.5f;

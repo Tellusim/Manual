@@ -78,6 +78,9 @@ int32_t main(int32_t argc, char **argv) {
 	Device device(window);
 	if(!device) return 1;
 	
+	// device info
+	TS_LOGF(Message, "Device: %s\n", device.getName().get());
+	
 	// check fragment tracing support
 	if(!device.getFeatures().fragmentTracing) {
 		TS_LOG(Error, "fragment tracing is not supported\n");

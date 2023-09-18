@@ -97,6 +97,9 @@ int32_t main(int32_t argc, char **argv) {
 	Device device(window);
 	if(!device) return 1;
 	
+	// device info
+	TS_LOGF(Message, "Device: %s\n", device.getName().get());
+	
 	// check compute shader support
 	if(!device.hasShader(Shader::TypeCompute)) {
 		TS_LOG(Error, "compute shader is not supported\n");
@@ -309,22 +312,10 @@ int32_t main(int32_t argc, char **argv) {
 		// create surfaces
 		uint32_t width = window.getWidth();
 		uint32_t height = window.getHeight();
-		if(window.getKeyboardKey('5')) {
-			width = 1600;
-			height = 900;
-		}
-		if(window.getKeyboardKey('6')) {
-			width = 1920;
-			height = 1080;
-		}
-		if(window.getKeyboardKey('7')) {
-			width = 2560;
-			height = 1440;
-		}
-		if(window.getKeyboardKey('8')) {
-			width = 3840;
-			height = 2160;
-		}
+		if(window.getKeyboardKey('5')) { width = 1600; height = 900; }
+		if(window.getKeyboardKey('6')) { width = 1920; height = 1080; }
+		if(window.getKeyboardKey('7')) { width = 2560; height = 1440; }
+		if(window.getKeyboardKey('8')) { width = 3840; height = 2160; }
 		if(!color_surface || color_surface.getWidth() != width || color_surface.getHeight() != height) {
 			device.releaseBuffer(depth_buffer);
 			device.releaseTexture(color_surface);

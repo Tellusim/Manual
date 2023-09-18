@@ -114,7 +114,7 @@
 			depth_buffer[surface_width * global_id.y + global_id.x] = depth_value;
 			imageStore(color_surface, global_id, uvec4(color_value));
 		}
-	}	
+	}
 	
 #elif DRAW_SHADER
 	

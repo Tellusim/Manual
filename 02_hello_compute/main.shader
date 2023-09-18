@@ -335,7 +335,7 @@
 			
 			// particle distance
 			float distance = length(particles_buffer[global_id].position.xyz - compute.camera.xyz);
-			distances_buffer[global_id] = 0xffffffffu - (floatBitsToUint(distance) ^ 0x80000000u);
+			distances_buffer[global_id] = ~0u - (floatBitsToUint(distance) ^ 0x80000000u);
 		}
 	}
 	
