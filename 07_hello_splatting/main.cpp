@@ -231,11 +231,11 @@ int32_t main(int32_t argc, char **argv) {
 	if(!scatter_kernel.loadShaderGLSL("main.shader", "SCATTER_SHADER=1; GROUP_SIZE=%u; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_size, group_width, group_height)) return 1;
 	if(!scatter_kernel.create()) return 1;
 	
-	// create raster kernel
+	// create Splatting kernel
 	// rasterizes Gaussians
-	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(3, false).setSurfaces(1);
-	if(!raster_kernel.loadShaderGLSL("main.shader", "RASTER_SHADER=1; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_width, group_height)) return 1;
-	if(!raster_kernel.create()) return 1;
+	Kernel splatting_kernel = device.createKernel().setUniforms(1).setStorages(3, false).setSurfaces(1);
+	if(!splatting_kernel.loadShaderGLSL("main.shader", "SPLATTING_SHADER=1; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_width, group_height)) return 1;
+	if(!splatting_kernel.create()) return 1;
 	
 	// create radix sort
 	RadixSort radix_sort;
@@ -274,13 +274,13 @@ int32_t main(int32_t argc, char **argv) {
 	Query gaussian_query;
 	Query scatter_query;
 	Query radix_query;
-	Query raster_query;
+	Query splatting_query;
 	if(device.hasQuery(Query::TypeTime)) {
 		gaussian_query = device.createQuery(Query::TypeTime);
 		scatter_query = device.createQuery(Query::TypeTime);
 		radix_query = device.createQuery(Query::TypeTime);
-		raster_query = device.createQuery(Query::TypeTime);
-		if(!gaussian_query || !scatter_query || !radix_query || !raster_query) return 1;
+		splatting_query = device.createQuery(Query::TypeTime);
+		if(!gaussian_query || !scatter_query || !radix_query || !splatting_query) return 1;
 	}
 	
 	// create panel
@@ -310,8 +310,8 @@ int32_t main(int32_t argc, char **argv) {
 			String gaussian_time = String::fromTime(gaussian_query.getTime());
 			String scatter_time = String::fromTime(scatter_query.getTime());
 			String radix_time = String::fromTime(radix_query.getTime());
-			String raster_time = String::fromTime(raster_query.getTime());
-			panel.setInfo(String::format("\nGaussian: %s\nScatter: %s\nRadix: %s\nRaster: %s", gaussian_time.get(), scatter_time.get(), radix_time.get(), raster_time.get()));
+			String splatting_time = String::fromTime(splatting_query.getTime());
+			panel.setInfo(String::format("\nGaussian: %s\nScatter: %s\nRadix: %s\nSplatting: %s", gaussian_time.get(), scatter_time.get(), radix_time.get(), splatting_time.get()));
 		}
 		
 		// update panel
@@ -467,10 +467,10 @@ int32_t main(int32_t argc, char **argv) {
 			if(radix_query) compute.endQuery(radix_query);
 			
 			// begin query
-			if(raster_query) compute.beginQuery(raster_query);
+			if(splatting_query) compute.beginQuery(splatting_query);
 				
-				// dispatch raster kernel
-				compute.setKernel(raster_kernel);
+				// dispatch Splatting kernel
+				compute.setKernel(splatting_kernel);
 				compute.setUniform(0, common_parameters);
 				compute.setStorageBuffers(0, {
 					gaussians_buffer,
@@ -482,7 +482,7 @@ int32_t main(int32_t argc, char **argv) {
 				compute.barrier(surface);
 				
 			// end query
-			if(raster_query) compute.endQuery(raster_query);
+			if(splatting_query) compute.endQuery(splatting_query);
 		}
 		
 		// flush surface

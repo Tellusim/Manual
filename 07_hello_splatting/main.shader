@@ -24,7 +24,7 @@
 
 /*
  */
-#if GAUSSIAN_SHADER || SCATTER_SHADER || RASTER_SHADER
+#if GAUSSIAN_SHADER || SCATTER_SHADER || SPLATTING_SHADER
 	
 	/*
 	 */
@@ -39,7 +39,7 @@
 
 /*
  */
-#if GAUSSIAN_SHADER || DISPATCH_SHADER || SCATTER_SHADER || RASTER_SHADER
+#if GAUSSIAN_SHADER || DISPATCH_SHADER || SCATTER_SHADER || SPLATTING_SHADER
 	
 	/*
 	 */
@@ -60,7 +60,7 @@
 
 /*
  */
-#if GAUSSIAN_SHADER || RASTER_SHADER
+#if GAUSSIAN_SHADER || SPLATTING_SHADER
 	
 	/*
 	 */
@@ -264,11 +264,7 @@
 				mat3 basis = transpose(mat3(modelview)) * jacobian;
 			#endif
 			mat3 m = transpose(basis) * transpose(transpose(transform) * transform) * basis;
-			
-			// reject small Gaussians
-			vec3 covariance = vec3(m[0].x, m[1].y, m[0].y);
-			[[branch]] if(any(lessThan(covariance.xy, vec2(1.0f)))) return;
-			covariance.xy += 0.3f;
+			vec3 covariance = vec3(m[0].x + 0.3f, m[1].y + 0.3f, m[0].y);
 			
 			// perspective projection
 			position = projection * position;
@@ -419,7 +415,7 @@
 		}
 	}
 	
-#elif RASTER_SHADER
+#elif SPLATTING_SHADER
 	
 	layout(local_size_x = GROUP_WIDTH / 4, local_size_y = GROUP_HEIGHT / 2) in;
 	
