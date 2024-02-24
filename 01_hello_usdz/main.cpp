@@ -1,6 +1,6 @@
 // MIT License
 // 
-// Copyright (C) 2018-2023, Tellusim Technologies Inc. https://tellusim.com/
+// Copyright (C) 2018-2024, Tellusim Technologies Inc. https://tellusim.com/
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,7 @@ using namespace Tellusim;
  */
 static Texture create_texture(const Device &device, const MeshMaterial &material, const char *type) {
 	
-	// fine material parameter
+	// find material parameter
 	uint32_t index = material.findParameter(type);
 	if(index == Maxu32 || !material.hasParameterFlag(index, MeshMaterial::FlagBlob)) return Texture::null;
 	
