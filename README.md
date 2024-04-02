@@ -7,6 +7,7 @@ https://tellusim.com/
 ---
 
 ## [Gaussian Splatting](https://tellusim.com/07_hello_splatting/)
+
 https://github.com/Tellusim/Manual/tree/main/07_hello_splatting/
 
 ![07 Hello Splatting](07_hello_splatting/07_hello_splatting.jpg)
@@ -14,6 +15,7 @@ https://github.com/Tellusim/Manual/tree/main/07_hello_splatting/
 ---
 
 ## [Ray Tracing with Traversal](https://tellusim.com/06_hello_traversal/)
+
 https://github.com/Tellusim/Manual/tree/main/06_hello_traversal/
 
 ![06 Hello Traversal](06_hello_traversal/06_hello_traversal.jpg)
@@ -21,6 +23,7 @@ https://github.com/Tellusim/Manual/tree/main/06_hello_traversal/
 ---
 
 ## [Ray Tracing with Ray Queries](https://tellusim.com/05_hello_tracing/)
+
 https://github.com/Tellusim/Manual/tree/main/05_hello_tracing/
 
 ![05 Hello Tracing](05_hello_tracing/05_hello_tracing.jpg)
@@ -28,6 +31,7 @@ https://github.com/Tellusim/Manual/tree/main/05_hello_tracing/
 ---
 
 ## [Compute rasterization](https://tellusim.com/04_hello_raster/)
+
 https://github.com/Tellusim/Manual/tree/main/04_hello_raster
 
 ![04 Hello Raster](04_hello_raster/04_hello_raster.jpg)
@@ -35,6 +39,7 @@ https://github.com/Tellusim/Manual/tree/main/04_hello_raster
 ---
 
 ## [Hierarchical LOD Graphs](https://tellusim.com/03_hello_mesh/)
+
 https://github.com/Tellusim/Manual/tree/main/03_hello_mesh/
 
 ![03 Hello Mesh](03_hello_mesh/03_hello_mesh.jpg)
@@ -42,6 +47,7 @@ https://github.com/Tellusim/Manual/tree/main/03_hello_mesh/
 ---
 
 ## [Particles Simuation](https://tellusim.com/02_hello_compute/)
+
 https://github.com/Tellusim/Manual/tree/main/02_hello_compute/
 
 ![02 Hello Compute](02_hello_compute/02_hello_compute.jpg)
@@ -49,6 +55,7 @@ https://github.com/Tellusim/Manual/tree/main/02_hello_compute/
 ---
 
 ## [USDZ Model Loading](https://tellusim.com/01_hello_usdz/)
+
 https://github.com/Tellusim/Manual/tree/main/01_hello_usdz/
 
 ![01 Hello Usdz](01_hello_usdz/01_hello_usdz.jpg)
@@ -56,6 +63,7 @@ https://github.com/Tellusim/Manual/tree/main/01_hello_usdz/
 ---
 
 ## [Hello Triangle](https://tellusim.com/00_hello_triangle/)
+
 https://github.com/Tellusim/Manual/tree/main/00_hello_triangle
 
 ![00 Hello Triangle](00_hello_triangle/00_hello_triangle.png)
