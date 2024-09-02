@@ -6,6 +6,14 @@ https://tellusim.com/
 
 ---
 
+## [Hello Canvas](https://tellusim.com/08_hello_canvas/)
+
+https://github.com/Tellusim/Manual/tree/main/08_hello_canvas/
+
+![08 Hello Canvas](08_hello_canvas/08_hello_canvas.png)
+
+---
+
 ## [Gaussian Splatting](https://tellusim.com/07_hello_splatting/)
 
 https://github.com/Tellusim/Manual/tree/main/07_hello_splatting/
