@@ -6,11 +6,11 @@ https://tellusim.com/
 
 ---
 
-## [Hello Canvas](https://tellusim.com/09_hello_controls/)
+## [Hello Controls](https://tellusim.com/09_hello_controls/)
 
 https://github.com/Tellusim/Manual/tree/main/09_hello_controls/
 
-![09 Hello Canvas](09_hello_canvas/09_hello_controls.png)
+![09 Hello Controls](09_hello_controls/09_hello_controls.png)
 
 ---
 
