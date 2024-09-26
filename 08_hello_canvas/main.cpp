@@ -58,7 +58,7 @@ int32_t main(int32_t argc, char **argv) {
 	// create canvas
 	Canvas canvas;
 	
-	// set full HD viewport
+	// set viewport size
 	float32_t width = 1600.0f;
 	float32_t height = 900.0f;
 	canvas.setViewport(width, height);
