@@ -52,6 +52,7 @@ int32_t main(int32_t argc, char **argv) {
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
+	window.setCloseClickedCallback([&]() { window.stop(); });
 	
 	// declarations
 	#include "main.h"
@@ -77,27 +78,27 @@ int32_t main(int32_t argc, char **argv) {
 	}
 	
 	// create init kernel
-	Kernel init_kernel = device.createKernel().setUniforms(1).setStorages(3, false);
+	Kernel init_kernel = device.createKernel().setUniforms(1).setStorages(3, BindFlagFixed);
 	if(!init_kernel.loadShaderGLSL("main.shader", "INIT_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!init_kernel.create()) return 1;
 	
 	// create emitter kernel
-	Kernel emitter_kernel = device.createKernel().setUniforms(1).setStorages(5, false).setStorageDynamic(0, true);
+	Kernel emitter_kernel = device.createKernel().setUniforms(1).setStorages(5, BindFlagFixed).setStorageFlags(0, BindFlagNone);
 	if(!emitter_kernel.loadShaderGLSL("main.shader", "EMITTER_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!emitter_kernel.create()) return 1;
 	
 	// create dispatch kernel
-	Kernel dispatch_kernel = device.createKernel().setUniforms(1).setStorages(4, false);
+	Kernel dispatch_kernel = device.createKernel().setUniforms(1).setStorages(4, BindFlagFixed);
 	if(!dispatch_kernel.loadShaderGLSL("main.shader", "DISPATCH_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!dispatch_kernel.create()) return 1;
 	
 	// create update kernel
-	Kernel update_kernel = device.createKernel().setUniforms(1).setStorages(4, false);
+	Kernel update_kernel = device.createKernel().setUniforms(1).setStorages(4, BindFlagFixed);
 	if(!update_kernel.loadShaderGLSL("main.shader", "UPDATE_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!update_kernel.create()) return 1;
 	
 	// create geometry kernel
-	Kernel geometry_kernel = device.createKernel().setUniforms(1).setStorages(4, false);
+	Kernel geometry_kernel = device.createKernel().setUniforms(1).setStorages(4, BindFlagFixed);
 	if(!geometry_kernel.loadShaderGLSL("main.shader", "GEOMETRY_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!geometry_kernel.create()) return 1;
 	

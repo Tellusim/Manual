@@ -51,8 +51,8 @@
 		int tiles_height;
 		int surface_width;
 		int surface_height;
-		uint num_gaussians;
 		uint max_gaussians;
+		uint num_gaussians;
 		uint num_tiles;
 	};
 	
@@ -141,8 +141,7 @@
 	layout(local_size_x = GROUP_SIZE) in;
 	
 	layout(std430, binding = 1) buffer GaussiansBuffer { Gaussian gaussians_buffer[]; };
-	layout(std430, binding = 2) buffer IndicesBuffer { uint indices_buffer[]; };
-	layout(std430, binding = 3) buffer TilesBuffer { uint count_buffer[]; };
+	layout(std430, binding = 2) buffer CountBuffer { uint count_buffer[]; };
 	
 	/*
 	 */
@@ -217,7 +216,8 @@
 			
 			// Gaussian position
 			vec4 position = modelview * gaussians_buffer[global_id].position;
-			if(position.z > -0.1f) return;
+			[[branch]] if(position.z > -0.1f) return;
+			float distance = length(position.xyz);
 			
 			// Gaussian rotation, scale, and opacity
 			vec4 rotation_scale = gaussians_buffer[global_id].rotation_scale;
@@ -258,7 +258,7 @@
 			
 			// covariance matrix
 			mat3 transform = scale * rotation;
-			#if CLAY_MTL || CLAY_HLSL
+			#if CLAY_HLSL || CLAY_MTL || CLAY_WG
 				mat3 basis = mat3(modelview) * jacobian;
 			#else
 				mat3 basis = transpose(mat3(modelview)) * jacobian;
@@ -268,8 +268,7 @@
 			
 			// perspective projection
 			position = projection * position;
-			float iposition_w = 1.0f / position.w;
-			position.xy = (position.xy * (0.5f * iposition_w) + 0.5f) * vec2(surface_width, surface_height);
+			position.xy = (position.xy * (0.5f / position.w) + 0.5f) * vec2(surface_width, surface_height);
 			
 			// Gaussian region
 			vec2 region_size = sqrt(covariance.xy) * 3.0f;
@@ -288,21 +287,17 @@
 				}
 			}
 			
-			// visible Gaussian index
-			uint index = atomicIncrement(count_buffer[num_tiles * 2u]);
-			indices_buffer[index] = global_id;
-			
-			// update Gaussian parameters
-			float idet = 1.0f / (covariance.x * covariance.y - covariance.z * covariance.z);
-			gaussians_buffer[global_id].covariance_depth = vec4(covariance * vec3(-0.5f, -0.5f, 1.0f) * idet, position.z * iposition_w);
-			gaussians_buffer[global_id].position_color = vec4(position.xy, 0.0f, 0.0f);
-			gaussians_buffer[global_id].min_tile = min_tile;
-			gaussians_buffer[global_id].max_tile = max_tile;
-			
 			// Gaussian color
 			vec3 direction = normalize(gaussians_buffer[global_id].position.xyz - camera.xyz);
 			vec4 color_opacity = vec4(get_color(global_id, direction.x, direction.y, direction.z), scale_opacity.w);
-			gaussians_buffer[global_id].position_color.zw = pack_half4(color_opacity);
+			
+			// update Gaussian parameters
+			uint index = atomicIncrement(count_buffer[num_tiles * 2u]);
+			float idet = 1.0f / (covariance.x * covariance.y - covariance.z * covariance.z);
+			gaussians_buffer[index].covariance_depth = vec4(covariance * vec3(-0.5f, -0.5f, 1.0f) * idet, distance);
+			gaussians_buffer[index].position_color = vec4(position.xy, pack_half4(color_opacity));
+			gaussians_buffer[index].min_tile = min_tile;
+			gaussians_buffer[index].max_tile = max_tile;
 		}
 	}
 	
@@ -349,7 +344,7 @@
 			uint keys_offset = count_buffer[global_id];
 			uint data_offset = keys_offset + max_gaussians;
 			
-			// dispatch parameters
+			// radix sort dispatch
 			uint index = global_id * 4u;
 			dispatch_buffer[index + 0u] = keys_offset;
 			dispatch_buffer[index + 1u] = data_offset;
@@ -362,7 +357,7 @@
 		// index kernel dispatch
 		[[branch]] if(global_id == 0u) {
 			
-			// dispatch parameters
+			// scatter dispatch
 			uint index = num_tiles * 4u;
 			dispatch_buffer[index + 0u] = (count_buffer[num_tiles * 2u] + GROUP_SIZE - 1u) / GROUP_SIZE;
 			dispatch_buffer[index + 1u] = 1u;
@@ -375,9 +370,8 @@
 	layout(local_size_x = GROUP_SIZE) in;
 	
 	layout(std430, binding = 1) readonly buffer GaussiansBuffer { Gaussian gaussians_buffer[]; };
-	layout(std430, binding = 2) readonly buffer IndicesBuffer { uint indices_buffer[]; };
-	layout(std430, binding = 3) buffer CountBuffer { uint count_buffer[]; };
-	layout(std430, binding = 4) writeonly buffer OrderBuffer { uint order_buffer[]; };
+	layout(std430, binding = 2) buffer CountBuffer { uint count_buffer[]; };
+	layout(std430, binding = 3) writeonly buffer OrderBuffer { uint order_buffer[]; };
 	
 	/*
 	 */
@@ -389,13 +383,13 @@
 		
 		[[branch]] if(global_id < num_gaussians) {
 			
-			// Gaussian index
-			uint index = indices_buffer[global_id];
+			// Gaussian depth
+			float position_z = gaussians_buffer[global_id].covariance_depth.w;
+			uint depth = (floatBitsToUint(position_z) ^ 0x80000000u) >> 8u;
 			
-			// Gaussian parameters
-			float depth = gaussians_buffer[index].covariance_depth.w;
-			ivec2 min_tile = gaussians_buffer[index].min_tile;
-			ivec2 max_tile = gaussians_buffer[index].max_tile;
+			// Gaussian region
+			ivec2 min_tile = gaussians_buffer[global_id].min_tile;
+			ivec2 max_tile = gaussians_buffer[global_id].max_tile;
 			
 			// scatter Gaussian
 			[[loop]] for(int y = min_tile.y; y < max_tile.y; y++) {
@@ -408,14 +402,24 @@
 					uint keys_index = count_buffer[tile_index] + atomicIncrement(count_buffer[tile_index + num_tiles]);
 					uint data_index = keys_index + max_gaussians;
 					
-					order_buffer[keys_index] = ~0u - ((floatBitsToUint(depth) ^ 0x80000000u) >> 8u);
-					order_buffer[data_index] = index;
+					order_buffer[keys_index] = depth;
+					order_buffer[data_index] = global_id;
 				}
 			}
 		}
 	}
 	
 #elif SPLATTING_SHADER
+	
+	#if CLAY_MTL
+		#define half		float16_t
+		#define hvec3		f16vec3
+		#define hvec4		f16vec4
+	#else
+		#define half		float
+		#define hvec3		vec3
+		#define hvec4		vec4
+	#endif
 	
 	layout(local_size_x = GROUP_WIDTH / 4, local_size_y = GROUP_HEIGHT / 2) in;
 	
@@ -446,32 +450,32 @@
 		
 		vec2 position = vec2(global_id);
 		
-		float transparency_00 = 1.0f;
-		float transparency_10 = 1.0f;
-		float transparency_20 = 1.0f;
-		float transparency_30 = 1.0f;
-		float transparency_31 = 1.0f;
-		float transparency_01 = 1.0f;
-		float transparency_11 = 1.0f;
-		float transparency_21 = 1.0f;
+		half transparency_00 = 1.0f;
+		half transparency_10 = 1.0f;
+		half transparency_20 = 1.0f;
+		half transparency_30 = 1.0f;
+		half transparency_31 = 1.0f;
+		half transparency_01 = 1.0f;
+		half transparency_11 = 1.0f;
+		half transparency_21 = 1.0f;
 		
-		vec3 color_00 = vec3(0.0f);
-		vec3 color_10 = vec3(0.0f);
-		vec3 color_20 = vec3(0.0f);
-		vec3 color_30 = vec3(0.0f);
-		vec3 color_01 = vec3(0.0f);
-		vec3 color_11 = vec3(0.0f);
-		vec3 color_21 = vec3(0.0f);
-		vec3 color_31 = vec3(0.0f);
+		hvec3 color_00 = hvec3(0.0f);
+		hvec3 color_10 = hvec3(0.0f);
+		hvec3 color_20 = hvec3(0.0f);
+		hvec3 color_30 = hvec3(0.0f);
+		hvec3 color_01 = hvec3(0.0f);
+		hvec3 color_11 = hvec3(0.0f);
+		hvec3 color_21 = hvec3(0.0f);
+		hvec3 color_31 = hvec3(0.0f);
 		
 		[[loop]] for(uint i = 0u; i < tile_gaussians; i++) {
 			
 			uint index = order_buffer[data_offset + i];
 			vec4 position_color = gaussians_buffer[index].position_color;
 			vec3 covariance = gaussians_buffer[index].covariance_depth.xyz;
-			vec4 color_opacity = unpack_half4(position_color.zw);
+			hvec4 color_opacity = hvec4(unpack_half4(position_color.zw));
 			
-			vec2 direction_00 = position_color.xy - position;
+			vec2 direction_00 = vec2(position_color.xy - position);
 			vec2 direction_10 = direction_00 - vec2(1.0f, 0.0f);
 			vec2 direction_20 = direction_00 - vec2(2.0f, 0.0f);
 			vec2 direction_30 = direction_00 - vec2(3.0f, 0.0f);
@@ -480,23 +484,23 @@
 			vec2 direction_21 = direction_00 - vec2(2.0f, 1.0f);
 			vec2 direction_31 = direction_00 - vec2(3.0f, 1.0f);
 			
-			float power_00 = dot(covariance, direction_00.yxx * direction_00.yxy);
-			float power_10 = dot(covariance, direction_10.yxx * direction_10.yxy);
-			float power_20 = dot(covariance, direction_20.yxx * direction_20.yxy);
-			float power_30 = dot(covariance, direction_30.yxx * direction_30.yxy);
-			float power_01 = dot(covariance, direction_01.yxx * direction_01.yxy);
-			float power_11 = dot(covariance, direction_11.yxx * direction_11.yxy);
-			float power_21 = dot(covariance, direction_21.yxx * direction_21.yxy);
-			float power_31 = dot(covariance, direction_31.yxx * direction_31.yxy);
+			half power_00 = half(dot(covariance, direction_00.yxx * direction_00.yxy));
+			half power_10 = half(dot(covariance, direction_10.yxx * direction_10.yxy));
+			half power_20 = half(dot(covariance, direction_20.yxx * direction_20.yxy));
+			half power_30 = half(dot(covariance, direction_30.yxx * direction_30.yxy));
+			half power_01 = half(dot(covariance, direction_01.yxx * direction_01.yxy));
+			half power_11 = half(dot(covariance, direction_11.yxx * direction_11.yxy));
+			half power_21 = half(dot(covariance, direction_21.yxx * direction_21.yxy));
+			half power_31 = half(dot(covariance, direction_31.yxx * direction_31.yxy));
 			
-			float alpha_00 = min(color_opacity.w * exp(power_00), 1.0f);
-			float alpha_10 = min(color_opacity.w * exp(power_10), 1.0f);
-			float alpha_20 = min(color_opacity.w * exp(power_20), 1.0f);
-			float alpha_30 = min(color_opacity.w * exp(power_30), 1.0f);
-			float alpha_01 = min(color_opacity.w * exp(power_01), 1.0f);
-			float alpha_11 = min(color_opacity.w * exp(power_11), 1.0f);
-			float alpha_21 = min(color_opacity.w * exp(power_21), 1.0f);
-			float alpha_31 = min(color_opacity.w * exp(power_31), 1.0f);
+			half alpha_00 = min(color_opacity.w * exp(power_00), half(1.0f));
+			half alpha_10 = min(color_opacity.w * exp(power_10), half(1.0f));
+			half alpha_20 = min(color_opacity.w * exp(power_20), half(1.0f));
+			half alpha_30 = min(color_opacity.w * exp(power_30), half(1.0f));
+			half alpha_01 = min(color_opacity.w * exp(power_01), half(1.0f));
+			half alpha_11 = min(color_opacity.w * exp(power_11), half(1.0f));
+			half alpha_21 = min(color_opacity.w * exp(power_21), half(1.0f));
+			half alpha_31 = min(color_opacity.w * exp(power_31), half(1.0f));
 			
 			color_00 += color_opacity.xyz * (alpha_00 * transparency_00);
 			color_10 += color_opacity.xyz * (alpha_10 * transparency_10);
@@ -507,18 +511,18 @@
 			color_21 += color_opacity.xyz * (alpha_21 * transparency_21);
 			color_31 += color_opacity.xyz * (alpha_31 * transparency_31);
 			
-			transparency_00 *= (1.0f - alpha_00);
-			transparency_10 *= (1.0f - alpha_10);
-			transparency_20 *= (1.0f - alpha_20);
-			transparency_30 *= (1.0f - alpha_30);
-			transparency_01 *= (1.0f - alpha_01);
-			transparency_11 *= (1.0f - alpha_11);
-			transparency_21 *= (1.0f - alpha_21);
-			transparency_31 *= (1.0f - alpha_31);
+			transparency_00 *= half(1.0f) - alpha_00;
+			transparency_10 *= half(1.0f) - alpha_10;
+			transparency_20 *= half(1.0f) - alpha_20;
+			transparency_30 *= half(1.0f) - alpha_30;
+			transparency_01 *= half(1.0f) - alpha_01;
+			transparency_11 *= half(1.0f) - alpha_11;
+			transparency_21 *= half(1.0f) - alpha_21;
+			transparency_31 *= half(1.0f) - alpha_31;
 			
-			float transparency_0 = max(max(transparency_00, transparency_10), max(transparency_20, transparency_30));
-			float transparency_1 = max(max(transparency_01, transparency_11), max(transparency_21, transparency_31));
-			[[branch]] if(max(transparency_0, transparency_1) < 1.0f / 255.0f) break;
+			half transparency_0 = max(max(transparency_00, transparency_10), max(transparency_20, transparency_30));
+			half transparency_1 = max(max(transparency_01, transparency_11), max(transparency_21, transparency_31));
+			[[branch]] if(max(transparency_0, transparency_1) < half(1.0f / 255.0f)) break;
 		}
 		
 		// save result

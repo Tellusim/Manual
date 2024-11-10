@@ -44,7 +44,7 @@ layout(row_major, binding = 0) uniform CommonParameters {
 	float window_height;
 	float time;
 };
-	
+
 /*
  */
 #if TASK_SHADER || MESH_SHADER

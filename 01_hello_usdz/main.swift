@@ -50,7 +50,7 @@ func main() -> Int32 {
 	// create window
 	let window = Window(app.getPlatform(), app.getDevice())
 	if !window || !window.setSize(app.getWidth(), app.getHeight()) { return 1 }
-	if !window.create("01 Hello USDZ") || !window.setHidden(false) { return 1 }
+	if !window.create("01 Hello USDZ Swift") || !window.setHidden(false) { return 1 }
 	window.setKeyboardPressedCallback(Window.KeyboardPressedFunction({ (key: UInt32, code: UInt32) in
 		if key == Window.Key.Esc.rawValue { window.stop() }
 	}))

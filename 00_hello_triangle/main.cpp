@@ -41,6 +41,7 @@ int32_t main(int32_t argc, char **argv) {
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
+	window.setCloseClickedCallback([&]() { window.stop(); });
 	
 	// vertex layout
 	struct Vertex {

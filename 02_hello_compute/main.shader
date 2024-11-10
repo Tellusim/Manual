@@ -52,7 +52,7 @@
 	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	layout(std140, binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
+	layout(binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
 	
 	layout(std430, binding = 1) writeonly buffer EmitterStateBuffer { EmitterState emitters_buffer[]; };
 	layout(std430, binding = 2) writeonly buffer ParticleStateBuffer { ParticleState particles_buffer[]; };
@@ -91,7 +91,7 @@
 	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	layout(std140, binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
+	layout(binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
 	layout(std430, binding = 1) readonly buffer EmitterParametersBuffer { EmitterParameters emitters[]; };
 	
 	#if CLAY_WGSL
@@ -238,7 +238,7 @@
 	
 	layout(local_size_x = 1) in;
 	
-	layout(std140, binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
+	layout(binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
 	
 	layout(std430, binding = 1) readonly buffer StateBuffer { ComputeState state; };
 	
@@ -272,7 +272,7 @@
 	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	layout(std140, binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
+	layout(binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
 	
 	#if CLAY_WGSL
 		layout(std430, binding = 1) buffer StateBuffer { uint state[]; };
@@ -343,7 +343,7 @@
 	
 	layout(local_size_x = GROUP_SIZE) in;
 	
-	layout(std140, binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
+	layout(binding = 0) uniform ComputeParametersBuffer { ComputeParameters compute; };
 	
 	layout(std430, binding = 1) readonly buffer StateBuffer { ComputeState state; };
 	

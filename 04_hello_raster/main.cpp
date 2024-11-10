@@ -58,6 +58,7 @@ int32_t main(int32_t argc, char **argv) {
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
+	window.setCloseClickedCallback([&]() { window.stop(); });
 	
 	// declarations
 	#include "main.h"
@@ -121,17 +122,17 @@ int32_t main(int32_t argc, char **argv) {
 	if(!draw_pipeline.create()) return 1;
 	
 	// create clear kernel
-	Kernel clear_kernel = device.createKernel().setUniforms(1).setStorages(1, false).setSurfaces(1);
+	Kernel clear_kernel = device.createKernel().setUniforms(1).setStorages(1, BindFlagFixed).setSurfaces(1);
 	if(!clear_kernel.loadShaderGLSL("main.shader", "CLEAR_SHADER=1")) return 1;
 	if(!clear_kernel.create()) return 1;
 	
 	// create draw kernel
-	Kernel draw_kernel = device.createKernel().setUniforms(1).setStorages(5, false);
+	Kernel draw_kernel = device.createKernel().setUniforms(1).setStorages(5, BindFlagFixed);
 	if(!draw_kernel.loadShaderGLSL("main.shader", "DRAW_SHADER=1; GROUP_SIZE=%uu", draw_group_size)) return 1;
 	if(!draw_kernel.create()) return 1;
 	
 	// create raster kernel
-	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(6, false).setSurfaces(1);
+	Kernel raster_kernel = device.createKernel().setUniforms(1).setStorages(6, BindFlagFixed).setSurfaces(1);
 	if(!raster_kernel.loadShaderGLSL("main.shader", "RASTER_SHADER=1; GROUP_SIZE=%uu; MAX_VERTICES=%uu", raster_group_size, max_attributes)) return 1;
 	if(!raster_kernel.create()) return 1;
 	

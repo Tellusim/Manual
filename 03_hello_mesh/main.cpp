@@ -56,6 +56,7 @@ int32_t main(int32_t argc, char **argv) {
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
+	window.setCloseClickedCallback([&]() { window.stop(); });
 	
 	// declarations
 	#include "main.h"
@@ -93,7 +94,7 @@ int32_t main(int32_t argc, char **argv) {
 	TS_LOGF(Message, "Device: %s\n", device.getName().get());
 
 	// check mesh shader support
-	if(!device.hasShader(Shader::TypeMesh)) {
+	if(!device.hasShader(Shader::TypeTask)) {
 		TS_LOG(Error, "mesh shader is not supported\n");
 		return 0;
 	}
@@ -101,7 +102,7 @@ int32_t main(int32_t argc, char **argv) {
 	// create pipeline
 	Pipeline pipeline = device.createPipeline();
 	pipeline.setUniformMask(0, Shader::MaskAll);
-	pipeline.setStorageMasks(0, 5, Shader::MaskTask | Shader::MaskMesh, false);
+	pipeline.setStorageMasks(0, 5, Shader::MaskTask | Shader::MaskMesh, BindFlagFixed);
 	pipeline.setColorFormat(window.getColorFormat());
 	pipeline.setDepthFormat(window.getDepthFormat());
 	pipeline.setDepthFunc(Pipeline::DepthFuncGreater);

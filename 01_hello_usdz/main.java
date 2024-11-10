@@ -20,7 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-import tellusim.*;
+package com.main;
+
+import com.tellusim.*;
 
 import java.lang.Math;
 import java.nio.ByteOrder;

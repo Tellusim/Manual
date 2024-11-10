@@ -55,6 +55,7 @@ int32_t main(int32_t argc, char **argv) {
 	window.setKeyboardPressedCallback([&](uint32_t key, uint32_t code) {
 		if(key == Window::KeyEsc) window.stop();
 	});
+	window.setCloseClickedCallback([&]() { window.stop(); });
 	
 	// declarations
 	#include "main.h"
@@ -78,8 +79,8 @@ int32_t main(int32_t argc, char **argv) {
 		uint32_t tiles_height;			// tiles height
 		uint32_t surface_width;			// surface width
 		uint32_t surface_height;		// surface height
-		uint32_t num_gaussians;			// number of Gaussians
 		uint32_t max_gaussians;			// maximum number of Gaussians
+		uint32_t num_gaussians;			// number of Gaussians
 		uint32_t num_tiles;				// number of tiles
 	};
 	
@@ -148,15 +149,20 @@ int32_t main(int32_t argc, char **argv) {
 		
 		// create Gaussians
 		float32x4_t harmonics[16];
-		gaussians.resize(position_attribute.getSize());
-		for(uint32_t i = 0; i < gaussians.size(); i++) {
-			Gaussian &gaussian = gaussians[i];
+		gaussians.reserve(position_attribute.getSize());
+		for(uint32_t i = 0; i < position_attribute.getSize(); i++) {
+			
+			// check opacity
+			float32_t opacity = 1.0f / (1.0f + exp(-opacity_data[i]));
+			if(opacity < 8.0f / 255.0f) continue;
+			
+			// create gaussian
+			Gaussian &gaussian = gaussians.append();
 			
 			// copy position
 			gaussian.position.set(position_data[i], 1.0f);
 			
 			// pack rotation, scale, and opacity
-			float32_t opacity = 1.0f / (1.0f + exp(-opacity_data[i]));
 			Vector4f scale = Vector4f(exp(scale_0_data[i]), exp(scale_1_data[i]), exp(scale_2_data[i]), opacity);
 			Quaternionf rotation = normalize(Quaternionf(rot_1_data[i], rot_2_data[i], rot_3_data[i], rot_0_data[i]));
 			gaussian.rotation_scale = float16x8_t(float16x4_t(float32x4_t(rotation.q)), float16x4_t(float32x4_t(scale.v)));
@@ -185,7 +191,7 @@ int32_t main(int32_t argc, char **argv) {
 			}
 		}
 		
-		TS_LOGF(Verbose, "Done %u %s %s\n", gaussians.size(), String::fromBytes(sizeof(Gaussian)).get(), String::fromBytes(gaussians.bytes()).get());
+		TS_LOGF(Verbose, "Done %u %u %s %s\n", gaussians.size(), position_attribute.getSize(), String::fromBytes(sizeof(Gaussian)).get(), String::fromBytes(gaussians.bytes()).get());
 	}
 	
 	// maximum number of Gaussians
@@ -203,37 +209,37 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create clear kernel
 	// clears counter buffer
-	Kernel clear_kernel = device.createKernel().setUniforms(1).setStorages(1, false);
+	Kernel clear_kernel = device.createKernel().setUniforms(1).setStorages(1, BindFlagFixed);
 	if(!clear_kernel.loadShaderGLSL("main.shader", "CLEAR_SHADER=1; GROUP_SIZE=%u", group_size)) return 1;
 	if(!clear_kernel.create()) return 1;
 	
 	// create Gaussian kernel
 	// creates Gaussian parameters and counts the number of Gaussians per tile
-	Kernel gaussian_kernel = device.createKernel().setUniforms(1).setStorages(3, false);
+	Kernel gaussian_kernel = device.createKernel().setUniforms(1).setStorages(2, BindFlagFixed);
 	if(!gaussian_kernel.loadShaderGLSL("main.shader", "GAUSSIAN_SHADER=1; GROUP_SIZE=%u; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_size, group_width, group_height)) return 1;
 	if(!gaussian_kernel.create()) return 1;
 	
 	// create align kernel
 	// aligns counter buffer
-	Kernel align_kernel = device.createKernel().setUniforms(1).setStorages(1, false);
+	Kernel align_kernel = device.createKernel().setUniforms(1).setStorages(1, BindFlagFixed);
 	if(!align_kernel.loadShaderGLSL("main.shader", "ALIGN_SHADER=1; GROUP_SIZE=%u", group_size)) return 1;
 	if(!align_kernel.create()) return 1;
 	
 	// create dispatch kernel
 	// creates dispatch arguments for scatter kernel and radix sort
-	Kernel dispatch_kernel = device.createKernel().setUniforms(1).setStorages(2, false);
+	Kernel dispatch_kernel = device.createKernel().setUniforms(1).setStorages(2, BindFlagFixed);
 	if(!dispatch_kernel.loadShaderGLSL("main.shader", "DISPATCH_SHADER=1; GROUP_SIZE=%uu", group_size)) return 1;
 	if(!dispatch_kernel.create()) return 1;
 	
 	// create scatter kernel
 	// creates Gaussian depth and indices to each tile
-	Kernel scatter_kernel = device.createKernel().setUniforms(1).setStorages(4, false);
+	Kernel scatter_kernel = device.createKernel().setUniforms(1).setStorages(3, BindFlagFixed);
 	if(!scatter_kernel.loadShaderGLSL("main.shader", "SCATTER_SHADER=1; GROUP_SIZE=%u; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_size, group_width, group_height)) return 1;
 	if(!scatter_kernel.create()) return 1;
 	
 	// create Splatting kernel
 	// rasterizes Gaussians
-	Kernel splatting_kernel = device.createKernel().setUniforms(1).setStorages(3, false).setSurfaces(1);
+	Kernel splatting_kernel = device.createKernel().setUniforms(1).setStorages(3, BindFlagFixed).setSurfaces(1);
 	if(!splatting_kernel.loadShaderGLSL("main.shader", "SPLATTING_SHADER=1; GROUP_WIDTH=%u; GROUP_HEIGHT=%u", group_width, group_height)) return 1;
 	if(!splatting_kernel.create()) return 1;
 	
@@ -245,11 +251,6 @@ int32_t main(int32_t argc, char **argv) {
 	// create Gaussians buffer
 	Buffer gaussians_buffer = device.createBuffer(Buffer::FlagStorage, gaussians.get(), gaussians.bytes());
 	if(!gaussians) return 1;
-	
-	// create indices buffer
-	// visible Gaussian indices
-	Buffer indices_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(uint32_t) * gaussians.size());
-	if(!indices_buffer) return 1;
 	
 	// create counter buffer
 	// the number of Gaussians per tile, the last element is the number of visible Gaussians
@@ -263,7 +264,7 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// create order buffer
 	// visible Gaussian depth and indices
-	Buffer order_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(float32_t) * max_gaussians * 2);
+	Buffer order_buffer = device.createBuffer(Buffer::FlagStorage, sizeof(uint32_t) * max_gaussians * 2);
 	if(!order_buffer) return 1;
 	
 	// create target
@@ -372,8 +373,8 @@ int32_t main(int32_t argc, char **argv) {
 			common_parameters.tiles_height = tiles_height;
 			common_parameters.surface_width = width;
 			common_parameters.surface_height = height;
-			common_parameters.num_gaussians = gaussians.size();
 			common_parameters.max_gaussians = max_gaussians;
+			common_parameters.num_gaussians = gaussians.size();
 			common_parameters.num_tiles = num_tiles;
 			
 			// transform scene
@@ -397,13 +398,11 @@ int32_t main(int32_t argc, char **argv) {
 				compute.setUniform(0, common_parameters);
 				compute.setStorageBuffers(0, {
 					gaussians_buffer,
-					indices_buffer,
 					count_buffer,
 				});
 				compute.dispatch(gaussians.size());
 				compute.barrier({
 					gaussians_buffer,
-					indices_buffer,
 					count_buffer,
 				});
 				
@@ -442,7 +441,6 @@ int32_t main(int32_t argc, char **argv) {
 				compute.setUniform(0, common_parameters);
 				compute.setStorageBuffers(0, {
 					gaussians_buffer,
-					indices_buffer,
 					count_buffer,
 					order_buffer,
 				});
@@ -494,7 +492,7 @@ int32_t main(int32_t argc, char **argv) {
 			// create command list
 			Command command = device.createCommand(target);
 			
-			// set pipeline
+			// draw surface
 			command.setPipeline(pipeline);
 			command.setTexture(0, surface);
 			command.drawArrays(3);
