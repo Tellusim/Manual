@@ -18,7 +18,7 @@ https://github.com/Tellusim/Manual/tree/main/11_hello_bindless/
 
 https://github.com/Tellusim/Manual/tree/main/10_hello_image/
 
-![10 Hello Image](10_hello_image/10_hello_image.png)
+![10 Hello Image](10_hello_image/10_hello_image.jpg)
 
 ---
 
