@@ -10,7 +10,7 @@ https://tellusim.com/
 
 https://github.com/Tellusim/Manual/tree/main/12_hello_controller/
 
-![12 Hello Controller](11_hello_controller/12_hello_controller.jpg)
+![12 Hello Controller](12_hello_controller/12_hello_controller.jpg)
 
 ---
 
