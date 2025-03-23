@@ -1,6 +1,6 @@
 // MIT License
 // 
-// Copyright (C) 2018-2024, Tellusim Technologies Inc. https://tellusim.com/
+// Copyright (C) 2018-2025, Tellusim Technologies Inc. https://tellusim.com/
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -193,7 +193,7 @@
 				#endif
 			}
 			
-			// load roughness texture
+			// load metallic texture
 			[[branch]] if(geometry.metallic_index != ~0u) {
 				#if CLAY_D3D12
 					metallic_color = textureLod(sampler2D(in_textures[nonuniformEXT(geometry.metallic_index)], in_sampler), texcoord, 0.0f);
