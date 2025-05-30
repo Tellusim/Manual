@@ -24,7 +24,6 @@
 #include <core/TellusimLog.h>
 #include <core/TellusimBlob.h>
 #include <core/TellusimTime.h>
-#include <core/TellusimSort.h>
 #include <format/TellusimMesh.h>
 #include <geometry/TellusimSpatial.h>
 #include <geometry/TellusimTriangle.h>
@@ -54,8 +53,8 @@ static Texture create_texture(const Device &device, const MeshMaterial &material
 	Blob blob = material.getParameterBlob(index);
 	if(!image.load(blob)) return Texture::null;
 	
-	// create texture
-	return device.createTexture(image);
+	// create texture with mipmaps
+	return device.createTexture(image.getMipmapped(Image::FilterBox), Texture::FlagMipmaps);
 }
 
 /*
@@ -156,14 +155,6 @@ int32_t main(int32_t argc, char **argv) {
 	}
 	Array<uint32_t> spatial_indices(1024);
 	
-	// spatial contacts
-	struct SpatialContact {
-		Vector3f position;
-		Vector3f normal;
-		float32_t depth;
-	};
-	Array<SpatialContact> spatial_contacts(1024);
-	
 	// create model
 	MeshModel model;
 	if(!model.create(device, pipeline, mesh, MeshModel::FlagMaterials)) return 1;
@@ -204,7 +195,7 @@ int32_t main(int32_t argc, char **argv) {
 	
 	// mouse/keyboard parameters
 	constexpr float32_t panning_sensitivity = 0.02f;
-	constexpr float32_t dolling_sensitivity = 0.02f;
+	constexpr float32_t dollying_sensitivity = 0.02f;
 	constexpr float32_t rotation_sensitivity = 0.4f;
 	constexpr float32_t keyboard_acceleration = 16.0f;
 	
@@ -279,9 +270,9 @@ int32_t main(int32_t argc, char **argv) {
 				camera_linear_velocity.y += mouse_dx * panning_sensitivity;
 				camera_linear_velocity.z += mouse_dy * panning_sensitivity;
 			}
-			// camera dolling
+			// camera dollying
 			else if(window.getMouseButton(Window::ButtonRight)) {
-				camera_linear_velocity.x += mouse_dy * dolling_sensitivity;
+				camera_linear_velocity.x += mouse_dy * dollying_sensitivity;
 			}
 		}
 		
@@ -297,7 +288,7 @@ int32_t main(int32_t argc, char **argv) {
 			camera_linear_velocity.y -= controller.getStickX(Controller::StickLeft) * acceleration;
 			camera_linear_velocity.z -= controller.getStickY(Controller::StickLeft) * acceleration;
 			
-			// camera dolling with triggers
+			// camera dollying with triggers
 			camera_linear_velocity.x += controller.getButtonValue(Controller::ButtonTriggerLeft) * acceleration;
 			camera_linear_velocity.x -= controller.getButtonValue(Controller::ButtonTriggerRight) * acceleration;
 		}
@@ -324,7 +315,8 @@ int32_t main(int32_t argc, char **argv) {
 		for(uint32_t i = 0; i < 8; i++) {
 			
 			// perform collision detection with the scene
-			spatial_contacts.clear();
+			float32_t contact_depth = 0.0f;
+			Vector3f contact_position = Vector3f::zero;
 			BoundBoxf camera_bound = BoundBoxf(camera_position - camera_radius, camera_position + camera_radius);
 			for(const SpatialTree &spatial : spatial_trees) {
 				if(!spatial.nodes) continue;
@@ -334,24 +326,19 @@ int32_t main(int32_t argc, char **argv) {
 					const Vector3f &v1 = spatial.vertices[index * 3 + 1];
 					const Vector3f &v2 = spatial.vertices[index * 3 + 2];
 					Vector3f texcoord = Triangle::closest(v0, v1, v2, camera_position);
-					if(texcoord.z > camera_radius) continue;
-					SpatialContact &contact = spatial_contacts.append();
-					contact.position = Triangle::lerp(v0, v1, v2, texcoord.xy);
-					contact.normal = normalize(camera_position - contact.position);
-					contact.depth = camera_radius - texcoord.z;
+					float32_t depth = camera_radius - texcoord.z;
+					if(depth < contact_depth) continue;
+					contact_position = Triangle::lerp(v0, v1, v2, texcoord.xy);
+					contact_depth = depth;
 				}
 			}
 			
-			// sort contacts by the depth
-			quickSort(spatial_contacts.get(), spatial_contacts.size(), [](const SpatialContact &c0, const SpatialContact &c1) {
-				if(c0.depth > c1.depth) return -1;
-				if(c0.depth < c1.depth) return 1;
-				return 0;
-			});
+			// check contact depth
+			if(contact_depth < 1e-6f) break;
 			
 			// simple collision resolve using deepest contact
-			if(spatial_contacts) camera_position += spatial_contacts[0].normal * (spatial_contacts[0].depth - 1e-6f);
-			else break;
+			Vector3f contact_normal = normalize(camera_position - contact_position);
+			camera_position += contact_normal * (contact_depth - 1e-6f);
 		}
 		
 		// window target
