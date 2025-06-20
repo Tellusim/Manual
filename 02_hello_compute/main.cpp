@@ -1,6 +1,6 @@
 // MIT License
 // 
-// Copyright (C) 2018-2024, Tellusim Technologies Inc. https://tellusim.com/
+// Copyright (C) 2018-2025, Tellusim Technologies Inc. https://tellusim.com/
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -250,7 +250,7 @@ int32_t main(int32_t argc, char **argv) {
 	float32_t old_time = (float32_t)Time::seconds();
 	
 	// main loop
-	window.run([&]() -> bool {
+	window.run([&]() {
 		
 		using Tellusim::sin;
 		using Tellusim::cos;
@@ -298,6 +298,7 @@ int32_t main(int32_t argc, char **argv) {
 			
 			// dispatch kernel
 			compute.setKernel(dispatch_kernel);
+			compute.setUniform(0, compute_parameters);
 			compute.setStorageBuffers(0, { state_buffer, dispatch_buffer, draw_buffer, sort_buffer });
 			compute.dispatch(1);
 			compute.barrier({ dispatch_buffer, draw_buffer, sort_buffer });
@@ -367,10 +368,6 @@ int32_t main(int32_t argc, char **argv) {
 
 /*
  */
-#if _WINAPP
-	#include <system/TellusimWinApp.h>
-	TS_DECLARE_WINAPP_MAIN
-#endif
 #if _ANDROID
 	#include <system/TellusimAndroid.h>
 	TS_DECLARE_ANDROID_NATIVE_ACTIVITY

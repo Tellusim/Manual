@@ -296,7 +296,7 @@ int32_t main(int32_t argc, char **argv) {
 		// rotate camera based on camera angular velocity
 		float32_t phi = atan2(camera_direction.x, camera_direction.y) * Rad2Deg + camera_angular_velocity.x * ifps;
 		float32_t theta = clamp(acos(clamp(camera_direction.z, -1.0f, 1.0f)) * Rad2Deg - 90.0f + camera_angular_velocity.y * ifps, -89.9f, 89.9f);
-		camera_direction = (Quaternionf(Vector3f(0.0f, 0.0f, 1.0f), -phi) * Quaternionf(Vector3f(1.0f, 0.0f, 0.0f), -theta)) * Vector3f(0.0f, 1.0f, 0.0f);
+		camera_direction = (Quaternionf::rotateZ(-phi) * Quaternionf::rotateX(-theta)) * Vector3f(0.0f, 1.0f, 0.0f);
 		
 		// calculate local camera basis
 		Vector3f front_direction = normalize(camera_direction);
@@ -401,10 +401,6 @@ int32_t main(int32_t argc, char **argv) {
 
 /*
  */
-#if _WINAPP
-	#include <system/TellusimWinApp.h>
-	TS_DECLARE_WINAPP_MAIN
-#endif
 #if _ANDROID
 	#include <system/TellusimAndroid.h>
 	TS_DECLARE_ANDROID_NATIVE_ACTIVITY
