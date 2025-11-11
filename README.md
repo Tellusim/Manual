@@ -8,4 +8,4 @@ For the latest implementation, visit:
 [Samples](https://github.com/Tellusim/Tellusim_Core_SDK/tree/main/samples/manual)
 
 Documentation:  
-[Tutorials](https://docs.tellusim.com/core/tutorials/)
+[Tutorials](https://docs.tellusim.com/core/tutorials/00_hello_triangle)
